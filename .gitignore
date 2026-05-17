@@ -1,0 +1,26 @@
+# Environment variables — NEVER push these
+.env
+.env.local
+.env.production
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+venv/
+.venv/
+env/
+
+# ChromaDB local data (contains personal search history)
+memory/chroma_db/
+
+# VS Code
+.vscode/
+
+# Output files (optional, comment out if you want to share)
+# output/
+
+# OS files
+.DS_Store
+Thumbs.db

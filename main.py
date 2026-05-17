@@ -28,6 +28,15 @@ def main():
         print("Error: Research goal cannot be empty.")
         return
     
+    # Sanitize input: enforce length limit and remove control characters
+    MAX_GOAL_LENGTH = 500
+    if len(goal) > MAX_GOAL_LENGTH:
+        print(f"Error: Research goal exceeds {MAX_GOAL_LENGTH} character limit (current: {len(goal)} characters).")
+        return
+    
+    # Remove control characters (keep only printable ASCII and common Unicode)
+    goal = ''.join(c for c in goal if ord(c) >= 32 or c in '\n\t')
+    
     print(f"\n🎯 Starting research on: {goal}")
     print("=" * 60)
     

@@ -18,8 +18,9 @@ memory/chroma_db/
 # VS Code
 .vscode/
 
-# Output files (optional, comment out if you want to share)
-# output/
+# Output files — contains research history, should not be pushed
+output/*.md
+output/*.json
 
 # OS files
 .DS_Store

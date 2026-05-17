@@ -193,6 +193,22 @@ Complete decision tree with all search queries, scores, and replanning decisions
 
 ---
 
+## Security & Privacy
+
+⚠️ **Important security considerations:**
+
+- **Never commit `.env` files** — Your `.env` file contains real API keys and is protected by `.gitignore`. Always verify with `git status` before pushing to ensure it's not staged.
+
+- **Output folder contains research history** — The `output/` directory (containing `report.md` and `reasoning_trace.json`) is gitignored by default to prevent accidentally pushing your research history. This folder is local-only.
+
+- **Web search implies logging** — ARIA makes real web searches via Tavily API and Groq API. Your research goals and queries may be logged by these services. Treat sensitive research topics accordingly and review their privacy policies:
+  - [Tavily Privacy](https://tavily.com/privacy)
+  - [Groq Privacy](https://groq.com/privacy)
+
+- **Local memory store** — ChromaDB vector store is stored locally in `memory/chroma_db/` and is gitignored. Your embeddings remain on your machine.
+
+---
+
 ## Author
 
 **Built by Aarti Panchal**

@@ -58,7 +58,7 @@ The loop continues until the critic is satisfied (score ≥ 7 across results) or
 | **Agent Framework** | LangGraph (StateGraph) |
 | **Web Search** | Tavily API |
 | **Memory Store** | ChromaDB (local vector database) |
-| **Backend** | Python 3.x, LangChain |
+| **Backend** | Python 3.10+, LangChain |
 
 ---
 
@@ -130,9 +130,7 @@ aria-agent/
 │   └── chroma_db/          # Local vector store
 ├── tools/
 │   └── search.py           # Tavily web search wrapper
-├── output/
-│   ├── report.md           # Generated research report
-│   └── reasoning_trace.json # Decision log
+├── output/                 # Gitignored — generated at runtime
 └── requirements.txt        # Python dependencies
 ```
 

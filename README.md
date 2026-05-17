@@ -199,7 +199,7 @@ Complete decision tree with all search queries, scores, and replanning decisions
 
 - **Education**: B.Tech AI/ML | PES University, Bangalore (2024–2028)
 - **Portfolio**: [aarti-panchal.site](https://aarti-panchal.site/)
-- **LinkedIn**: [linkeIn](https://linkedin.com/in/aarti-panchal-93196a319)
+- **LinkedIn**: [linkedIn](https://linkedin.com/in/aarti-panchal-93196a319)
 
 ---
 

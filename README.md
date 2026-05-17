@@ -198,15 +198,14 @@ Complete decision tree with all search queries, scores, and replanning decisions
 **Built by Aarti Panchal**
 
 - **Education**: B.Tech AI/ML | PES University, Bangalore (2024–2028)
-- **GitHub**: [github.com/Aarti-panchal01](https://github.com/Aarti-panchal01)
-- **Portfolio**: aarti-panchal.site
-- **LinkedIn**: [linkedin.com/in/aarti-panchal-93196a319](https://linkedin.com/in/aarti-panchal-93196a319)
+- **Portfolio**: [aarti-panchal.site](https://aarti-panchal.site/)
+- **LinkedIn**: [linkeIn](https://linkedin.com/in/aarti-panchal-93196a319)
 
 ---
 
 ## License
 
-MIT — Feel free to use, modify, and distribute.
+MIT 
 
 ---
 

@@ -2,6 +2,9 @@
 
 > A LangGraph-powered research agent that plans, searches, critiques, remembers, and reports — autonomously.
 
+> 🚧 **v1.0 — Work in Progress.** Core agent is functional.
+> Streamlit UI and test suite actively in development.
+
 ---
 
 ## How It Works

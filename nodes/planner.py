@@ -7,7 +7,7 @@ Integrates with memory context if available.
 
 import os
 import re
-
+import time
 from dotenv import load_dotenv, find_dotenv
 from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage, HumanMessage
@@ -96,17 +96,35 @@ Return ONLY a numbered list, nothing else."""
     # Build user message for LLM planning
     user_message = f"Research goal: {goal}"
     
-    # Call LLM
+    # Call LLM with retry logic: up to 3 attempts with 2-second wait between retries
     messages = [
         SystemMessage(content=system_prompt),
         HumanMessage(content=user_message)
     ]
     
-    response = llm.invoke(messages)
-    response_text = response.content
+    max_retries = 3
+    retry_delay = 2
+    response_text = None
     
-    # Parse subtasks from response
-    subtasks = _parse_subtasks(response_text)
+    for attempt in range(max_retries):
+        try:
+            response = llm.invoke(messages)
+            response_text = response.content
+            break  # Success, exit retry loop
+        except Exception as e:
+            if attempt < max_retries - 1:
+                # Not the last attempt, wait and retry
+                time.sleep(retry_delay)
+            else:
+                # All retries exhausted, log error and use fallback
+                print(f"LLM call failed after {max_retries} retries in planner: {str(e)}")
+                response_text = None
+    
+    # Parse subtasks from response, or use fallback on error
+    if response_text:
+        subtasks = _parse_subtasks(response_text)
+    else:
+        subtasks = ["Research the topic"]  # Fallback: minimal subtask
     
     # Return updated state
     return {

@@ -7,7 +7,7 @@ Assigns scores that guide replanning and execution decisions.
 
 import os
 import re
-
+import time
 from dotenv import load_dotenv, find_dotenv
 from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage
@@ -87,12 +87,30 @@ def critic_node(state: AgentState) -> dict:
         f"Reply with ONLY a single integer between 0 and 10."
     )
     
-    # Call LLM for evaluation
-    response = llm.invoke([HumanMessage(content=prompt)])
-    response_text = response.content
+    # Call LLM for evaluation with retry logic: up to 3 attempts with 2-second wait between retries
+    max_retries = 3
+    retry_delay = 2
+    response_text = None
     
-    # Parse score from response
-    score = _parse_score(response_text)
+    for attempt in range(max_retries):
+        try:
+            response = llm.invoke([HumanMessage(content=prompt)])
+            response_text = response.content
+            break  # Success, exit retry loop
+        except Exception as e:
+            if attempt < max_retries - 1:
+                # Not the last attempt, wait and retry
+                time.sleep(retry_delay)
+            else:
+                # All retries exhausted, log error and use fallback
+                print(f"LLM call failed after {max_retries} retries in critic: {str(e)}")
+                response_text = None
+    
+    # Parse score from response, or use fallback on error
+    if response_text:
+        score = _parse_score(response_text)
+    else:
+        score = 5  # Fallback: neutral score
     
     # Update the last result with the score
     last_result["score"] = score

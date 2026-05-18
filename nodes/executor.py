@@ -8,7 +8,7 @@ searches and combines results.
 
 import os
 import re
-
+import time
 from dotenv import load_dotenv, find_dotenv
 from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage, HumanMessage
@@ -141,8 +141,28 @@ def executor_node(state: AgentState) -> dict:
         HumanMessage(content=current_subtask)
     ]
     
-    query_response = llm.invoke(messages)
-    search_query = query_response.content.strip()
+    # Call LLM with retry logic: up to 3 attempts with 2-second wait between retries
+    max_retries = 3
+    retry_delay = 2
+    search_query = None
+    
+    for attempt in range(max_retries):
+        try:
+            query_response = llm.invoke(messages)
+            search_query = query_response.content.strip()
+            break  # Success, exit retry loop
+        except Exception as e:
+            if attempt < max_retries - 1:
+                # Not the last attempt, wait and retry
+                time.sleep(retry_delay)
+            else:
+                # All retries exhausted, log error and use fallback
+                print(f"LLM call failed after {max_retries} retries in executor: {str(e)}")
+                search_query = None
+    
+    # Use fallback search query if LLM call failed
+    if not search_query:
+        search_query = current_subtask[:100]  # Use first 100 chars of subtask as fallback
     
     # Step 2: Bias toward LangChain documentation if researching LangChain
     if "research langchain" in current_subtask.lower():

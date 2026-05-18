@@ -7,7 +7,7 @@ and generates a reasoning trace for transparency.
 
 import os
 import json
-
+import time
 from dotenv import load_dotenv, find_dotenv
 from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage, HumanMessage
@@ -180,7 +180,7 @@ def report_generator_node(state: AgentState) -> dict:
     if guaranteed_context:
         prompt = f"# Guaranteed Framework Facts\n{guaranteed_context}\n{prompt}"
     
-    # Call LLM to generate report with simple system prompt
+    # Call LLM to generate report with simple system prompt, with retry logic: up to 3 attempts with 2-second wait between retries
     messages = [
         SystemMessage(
             content=(
@@ -199,8 +199,33 @@ def report_generator_node(state: AgentState) -> dict:
         HumanMessage(content=prompt)
     ]
     
-    response = llm.invoke(messages)
-    report_markdown = response.content
+    max_retries = 3
+    retry_delay = 2
+    report_markdown = None
+    
+    for attempt in range(max_retries):
+        try:
+            response = llm.invoke(messages)
+            report_markdown = response.content
+            break  # Success, exit retry loop
+        except Exception as e:
+            if attempt < max_retries - 1:
+                # Not the last attempt, wait and retry
+                time.sleep(retry_delay)
+            else:
+                # All retries exhausted, log error and use fallback
+                print(f"LLM call failed after {max_retries} retries in report_generator: {str(e)}")
+                report_markdown = None
+    
+    # Use fallback report if LLM call failed
+    if not report_markdown:
+        report_markdown = (
+            f"# Research Report\n\n"
+            f"## Goal\n{goal}\n\n"
+            f"## Findings\n\n"
+            f"Encountered error generating report. "
+            f"Retrieved {len(filtered_results)} research findings.\n"
+        )
     report_markdown = align_markdown_table(report_markdown)
     
     # Generate reasoning trace from filtered results

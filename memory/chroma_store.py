@@ -124,3 +124,51 @@ def retrieve_relevant(query: str, n: int = 3) -> tuple[str, dict]:
     except Exception as exc:  # noqa: BLE001
         logger.error("Error retrieving findings from ChromaDB: %s", exc)
         return f"Error retrieving findings: {exc}", {"retrieved": 0, "total": 0}
+
+
+def retrieve_candidates(
+    query: str, n: int = 3, threshold: float = 0.75
+) -> tuple[list[dict], int]:
+    """
+    Return candidate past findings whose cosine similarity meets ``threshold``.
+
+    Unlike ``retrieve_relevant`` (which formats whatever is nearest), this
+    applies a hard similarity floor so unrelated topics are never returned. The
+    caller (memory_reader) additionally runs an LLM relevance check.
+
+    Args:
+        query (str): The research goal.
+        n (int): Max candidates to fetch before filtering.
+        threshold (float): Minimum cosine similarity (0-1) to keep a candidate.
+
+    Returns:
+        tuple[list[dict], int]: Candidates ({task, content, similarity,
+        timestamp}) above threshold, and the total number of stored findings.
+    """
+    try:
+        collection = _get_or_create_collection()
+        total = collection.count()
+        if total == 0:
+            return [], 0
+
+        results = collection.query(query_texts=[query], n_results=min(n, total))
+        documents = results.get("documents", [[]])[0]
+        metadatas = results.get("metadatas", [[]])[0]
+        distances = results.get("distances", [[]])[0] if results.get("distances") else []
+
+        candidates: list[dict] = []
+        for idx, (doc, metadata) in enumerate(zip(documents, metadatas, strict=False)):
+            similarity = (1 - distances[idx]) if idx < len(distances) else 0.0
+            if similarity >= threshold:
+                candidates.append(
+                    {
+                        "task": metadata.get("task", "Unknown Task"),
+                        "content": doc,
+                        "similarity": round(similarity, 2),
+                        "timestamp": metadata.get("timestamp", ""),
+                    }
+                )
+        return candidates, total
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Error retrieving candidates from ChromaDB: %s", exc)
+        return [], 0

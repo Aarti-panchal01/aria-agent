@@ -75,10 +75,7 @@ def _run(goal="Compare Redis vs Memcached", chat_cls=_FakeChat, search_fail=Fals
             ]
             stack.enter_context(patch("nodes.executor.aggregate_search", return_value=fake))
         stack.enter_context(
-            patch(
-                "nodes.memory_reader.retrieve_relevant",
-                return_value=("No past findings.", {"retrieved": 0, "total": 0}),
-            )
+            patch("nodes.memory_reader.retrieve_candidates", return_value=([], 0))
         )
         stack.enter_context(patch("nodes.memory_writer.save_finding", return_value=True))
         stack.enter_context(patch("nodes.report_generator.open", create=True))

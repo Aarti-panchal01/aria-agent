@@ -1,245 +1,181 @@
 """
 Report generator node for the ARIA research agent.
 
-Synthesizes all research findings into a clean markdown report
-and generates a reasoning trace for transparency.
+Synthesizes all findings into a markdown report (using ONLY the findings as
+source material — no hardcoded facts) and writes a full reasoning trace.
 """
 
-import os
 import json
-import time
-from dotenv import load_dotenv, find_dotenv
-from langchain_groq import ChatGroq
-from langchain_core.messages import SystemMessage, HumanMessage
+import os
 
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_groq import ChatGroq
+
+from config import GROQ_MODEL, get_logger, invoke_with_retry, require_groq_key
 from state import AgentState
 
-# Output directory
+logger = get_logger(__name__)
+
 OUTPUT_DIR = "./output"
 
+_SYSTEM_PROMPT = (
+    "You are a research report writer. Using ONLY the provided findings, write "
+    "a structured report.\n\n"
+    "Structure:\n"
+    "1. Executive Summary — 3 sentences max\n"
+    "2. Comparison Table — one row per meaningful dimension, only rows where "
+    "you found real data in the findings. Emit clean GitHub-flavored markdown "
+    "(a header row, one separator row, then data rows)\n"
+    "3. Key Conclusions — 3 bullet points\n"
+    "4. Key Takeaway — one sentence\n\n"
+    "Never invent data. If you found nothing about a subject, say so honestly. "
+    "Use simple, plain English."
+)
 
-def _ensure_output_dir():
-    """Ensure the output directory exists."""
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+def _is_separator_cells(cells: list[str]) -> bool:
+    """True if every cell looks like a markdown table separator (e.g. ---, :--:)."""
+    if not cells:
+        return False
+    return all(c and set(c) <= set("-: ") and "-" in c for c in cells)
+
+
+def _format_row(row: list[str], widths: list[int]) -> str:
+    """Render one table row with each cell left-padded to its column width."""
+    return "| " + " | ".join(cell.ljust(widths[i]) for i, cell in enumerate(row)) + " |"
+
+
+def align_markdown_table(text: str) -> str:
+    """
+    Pretty-print markdown tables with aligned columns.
+
+    Correctly skips the source separator row (and any stray separator rows in
+    the table body) instead of re-emitting them as data — the bug that put a
+    ``| --- | --- |`` row inside the old reports.
+
+    Args:
+        text (str): Markdown text possibly containing tables.
+
+    Returns:
+        str: Markdown with aligned, well-formed tables.
+    """
+    lines = text.split("\n")
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        has_sep_next = (
+            "|" in lines[i]
+            and i + 1 < len(lines)
+            and _is_separator_cells(
+                [c.strip() for c in lines[i + 1].strip().strip("|").split("|")]
+            )
+        )
+        if has_sep_next:
+            block = [lines[i]]
+            j = i + 2
+            while j < len(lines) and "|" in lines[j]:
+                block.append(lines[j])
+                j += 1
+
+            rows: list[list[str]] = []
+            for line in block:
+                cells = [c.strip() for c in line.strip().strip("|").split("|")]
+                if _is_separator_cells(cells):
+                    continue  # drop the original + any stray separator rows
+                rows.append(cells)
+
+            if rows:
+                ncols = max(len(r) for r in rows)
+                rows = [r + [""] * (ncols - len(r)) for r in rows]
+                widths = [max(3, max(len(r[c]) for r in rows)) for c in range(ncols)]
+
+                out.append(_format_row(rows[0], widths))
+                out.append("| " + " | ".join("-" * w for w in widths) + " |")
+                out.extend(_format_row(r, widths) for r in rows[1:])
+            i = j
+        else:
+            out.append(lines[i])
+            i += 1
+    return "\n".join(out)
+
+
+def _unique_sorted(results: list[dict]) -> list[dict]:
+    """Return findings sorted by task index (results are already deduped by id)."""
+    return sorted(results, key=lambda r: r.get("task_index", 0))
 
 
 def _build_report_prompt(goal: str, results: list[dict]) -> str:
-    """
-    Build a prompt for the LLM to synthesize research findings into a report.
-    
-    Args:
-        goal (str): The original research goal.
-        results (list[dict]): Filtered research results with task, output, and score.
-    
-    Returns:
-        str: The prompt for report generation.
-    """
-    # Build findings text
+    """Build the report-generation prompt from goal and findings."""
     findings_text = ""
     for idx, result in enumerate(results, 1):
-        task = result.get("task", "Unknown")
         output = result.get("output", "No output")
-        
-        # Truncate output to 500 characters to reduce token count
-        truncated_output = output[:500] + "..." if len(output) > 500 else output
-        
-        findings_text += f"\n### Finding {idx}: {task}\n{truncated_output}\n"
-    
-    prompt = (
+        truncated = output[:500] + "..." if len(output) > 500 else output
+        findings_text += f"\n### Finding {idx}: {result.get('task', 'Unknown')}\n{truncated}\n"
+    return (
         f"# Research Goal\n{goal}\n"
         f"\n# Research Findings (Your Only Source of Truth)\n{findings_text}"
     )
-    
-    return prompt
 
 
-def _generate_reasoning_trace(results: list[dict]) -> str:
-    """
-    Generate a JSON reasoning trace showing all results and their scores.
-    
-    Args:
-        results (list[dict]): All research results.
-    
-    Returns:
-        str: JSON string of the reasoning trace.
-    """
+def _reasoning_trace(goal: str, results: list[dict], memory_stats: dict) -> str:
+    """Serialize a full reasoning trace (including per-dimension critic scores)."""
+    scores = [r.get("score", 0) for r in results]
     trace = {
+        "goal": goal,
         "total_tasks": len(results),
+        "average_score": round(sum(scores) / len(scores), 2) if scores else 0,
+        "memory_stats": memory_stats,
         "results": results,
-        "average_score": (
-            sum(r.get("score", 0) for r in results) / len(results)
-            if results
-            else 0
-        )
     }
     return json.dumps(trace, indent=2)
 
 
-def align_markdown_table(text: str) -> str:
-    """Align markdown table columns for better readability."""
-    lines = text.split('\n')
-    result = []
-    i = 0
-    while i < len(lines):
-        if '|' in lines[i] and i+1 < len(lines) and '---' in lines[i+1]:
-            table_lines = [lines[i]]
-            i += 1
-            while i < len(lines) and '|' in lines[i]:
-                table_lines.append(lines[i])
-                i += 1
-            rows = []
-            for line in table_lines:
-                cells = [c.strip() for c in line.strip().strip('|').split('|')]
-                rows.append(cells)
-            col_widths = []
-            for col in range(len(rows[0])):
-                width = max(len(row[col]) if col < len(row) else 0
-                           for row in rows)
-                col_widths.append(max(width, 3))
-            for idx, row in enumerate(rows):
-                padded = [cell.ljust(col_widths[j])
-                         for j, cell in enumerate(row)]
-                result.append('| ' + ' | '.join(padded) + ' |')
-                if idx == 0:
-                    result.append('| ' + ' | '.join(
-                        '-' * w for w in col_widths) + ' |')
-        else:
-            result.append(lines[i])
-            i += 1
-    return '\n'.join(result)
-
-
 def report_generator_node(state: AgentState) -> dict:
     """
-    Report generator node: synthesize findings into a final markdown report.
-    
-    Filters results by score, detects query type, and generates a formatted
-    report with a reasoning trace. Saves both to output directory.
-    
+    Synthesize findings into the final markdown report and reasoning trace.
+
     Args:
         state (AgentState): Current agent state.
-    
+
     Returns:
-        dict: Updated state with final_report field populated.
+        dict: ``final_report`` (markdown).
     """
-    # Hardcoded knowledge base for guaranteed framework data
-    HARDCODED_KB = {
-        "langchain": """
-- Primary Purpose: Open-source framework for building LLM-powered apps with modular components
-- Workflow Type: Linear, sequential — retrieve, process, respond  
-- Architecture: Chains, agents, tools, memory, document loaders
-- State Management: Basic, short-term memory within a single run
-- Best Use Cases: Chatbots, document summarization, RAG pipelines, quick prototypes
-- Limitations: Hits ceiling with complex workflows, stateless across runs
-""",
-        "langgraph": """
-- Primary Purpose: Low-level orchestration framework for stateful, multi-agent applications
-- Workflow Type: Graph-based — supports loops, branches, cycles, conditional edges
-- Architecture: Nodes (functions) + Edges (control flow) + shared AgentState  
-- State Management: Persistent across steps, sessions, and agents
-- Best Use Cases: Multi-agent systems, human-in-the-loop, long-running production agents
-- Limitations: Steeper learning curve, no built-in test runner, more upfront planning needed
-"""
-    }
-    
-    # Load environment variables from .env
-    load_dotenv(find_dotenv())
-    
-    # Initialize Groq LLM
-    GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-    if not GROQ_API_KEY:
-        raise ValueError(
-            "GROQ_API_KEY not found in environment. "
-            "Please set it in your .env file."
-        )
-    
-    llm = ChatGroq(
-        model="llama-3.1-8b-instant",
-        api_key=GROQ_API_KEY,
-        temperature=0.2,
-        max_tokens=800
-    )
-    
-    _ensure_output_dir()
-    
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
     goal = state.get("goal", "")
-    results = state.get("results", [])
-    
-    # Build guaranteed context from hardcoded KB
-    guaranteed_context = ""
-    goal_lower = goal.lower()
-    for framework, facts in HARDCODED_KB.items():
-        if framework in goal_lower:
-            guaranteed_context += f"\n=== VERIFIED FACTS: {framework.upper()} ===\n{facts}\n"
-    
-    # Use all results for report
-    filtered_results = results
-    
-    # Build prompt for report generation with guaranteed context prepended
-    prompt = _build_report_prompt(goal, filtered_results)
-    if guaranteed_context:
-        prompt = f"# Guaranteed Framework Facts\n{guaranteed_context}\n{prompt}"
-    
-    # Call LLM to generate report with simple system prompt, with retry logic: up to 3 attempts with 2-second wait between retries
+    results = _unique_sorted(state.get("results", []))
+    memory_stats = state.get("memory_stats", {"retrieved": 0, "total": 0})
+
+    llm = ChatGroq(
+        model=GROQ_MODEL, api_key=require_groq_key(), temperature=0.2, max_tokens=800
+    )
     messages = [
-        SystemMessage(
-            content=(
-                "You are a research report writer. Using ONLY the provided "
-                "findings, write a structured report.\n\n"
-                "Structure:\n"
-                "1. Executive Summary — 3 sentences max\n"
-                "2. Comparison Table — one row per meaningful dimension, "
-                "only include rows where you found real data in findings\n"
-                "3. Key Conclusions — 3 bullet points\n"
-                "4. Key Takeaway — one sentence\n\n"
-                "Never invent data. If you found nothing about a subject, "
-                "say so honestly. Use simple plain English."
-            )
-        ),
-        HumanMessage(content=prompt)
+        SystemMessage(content=_SYSTEM_PROMPT),
+        HumanMessage(content=_build_report_prompt(goal, results)),
     ]
-    
-    max_retries = 3
-    retry_delay = 2
-    report_markdown = None
-    
-    for attempt in range(max_retries):
-        try:
-            response = llm.invoke(messages)
-            report_markdown = response.content
-            break  # Success, exit retry loop
-        except Exception as e:
-            if attempt < max_retries - 1:
-                # Not the last attempt, wait and retry
-                time.sleep(retry_delay)
-            else:
-                # All retries exhausted, log error and use fallback
-                print(f"LLM call failed after {max_retries} retries in report_generator: {str(e)}")
-                report_markdown = None
-    
-    # Use fallback report if LLM call failed
-    if not report_markdown:
+
+    response = invoke_with_retry(llm, messages, context="report_generator")
+    if response is not None:
+        report_markdown = response.content
+    else:
         report_markdown = (
-            f"# Research Report\n\n"
-            f"## Goal\n{goal}\n\n"
-            f"## Findings\n\n"
-            f"Encountered error generating report. "
-            f"Retrieved {len(filtered_results)} research findings.\n"
+            f"# Research Report\n\n## Goal\n{goal}\n\n## Findings\n\n"
+            f"Encountered an error generating the report. "
+            f"Collected {len(results)} findings.\n"
         )
+
     report_markdown = align_markdown_table(report_markdown)
-    
-    # Generate reasoning trace from filtered results
-    reasoning_trace = _generate_reasoning_trace(filtered_results)
-    
-    # Save report to file
-    report_path = os.path.join(OUTPUT_DIR, "report.md")
-    with open(report_path, "w", encoding="utf-8") as f:
+
+    # Append an honest memory footer.
+    report_markdown += (
+        f"\n\n---\n_Retrieved {memory_stats.get('retrieved', 0)} memories from "
+        f"{memory_stats.get('total', 0)} stored across previous runs._\n"
+    )
+
+    with open(os.path.join(OUTPUT_DIR, "report.md"), "w", encoding="utf-8") as f:
         f.write(report_markdown)
-    
-    # Save reasoning trace to file
-    trace_path = os.path.join(OUTPUT_DIR, "reasoning_trace.json")
-    with open(trace_path, "w", encoding="utf-8") as f:
-        f.write(reasoning_trace)
-    
-    # Return the final report in state
+    with open(os.path.join(OUTPUT_DIR, "reasoning_trace.json"), "w", encoding="utf-8") as f:
+        f.write(_reasoning_trace(goal, results, memory_stats))
+
+    logger.info("Report generated from %d findings", len(results))
     return {"final_report": report_markdown}

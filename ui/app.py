@@ -362,47 +362,69 @@ def show_saved_session(session_id: str) -> None:
 # --- Sidebar controls ------------------------------------------------------
 
 with st.sidebar:
-    st.header("Run")
+    st.markdown(
+        "<div class='brand'>🔬 ARIA</div>"
+        "<div class='brand-sub'>Autonomous Research Agent</div>"
+        "<div class='brand-ver'>v0.3.0 · agent-aria.streamlit.app</div>",
+        unsafe_allow_html=True,
+    )
+    st.divider()
+
     if st.button("➕ New Research", use_container_width=True):
-        for k in ("active_session", "prefill_goal"):
+        for k in ("active_session", "prefill_goal", "history_show"):
             st.session_state.pop(k, None)
         st.rerun()
 
     goal_input = st.text_area(
-        "Research goal",
+        "What do you want to research?",
         value=st.session_state.get("prefill_goal", ""),
-        placeholder="Compare Redis vs Memcached for caching",
+        placeholder="e.g. How does transformer attention work?",
         height=100,
     )
     start = st.button("🚀 Run ARIA", type="primary", use_container_width=True)
-    st.caption("Requires GROQ_API_KEY and TAVILY_API_KEY (env, .env, or Streamlit secrets).")
+    st.markdown(
+        "<div class='brand-sub'>Searches web, arXiv, Wikipedia, GitHub</div>",
+        unsafe_allow_html=True,
+    )
 
     st.divider()
-    st.subheader("🔎 Research Sources")
+    st.markdown("<div class='side-label'>Sources</div>", unsafe_allow_html=True)
     _available = set(available_source_names())
-    _labels = {"web": "Web (Tavily)", "arxiv": "arXiv", "wikipedia": "Wikipedia", "github": "GitHub"}
+    _labels = {"web": "Web", "arxiv": "arXiv", "wikipedia": "Wikipedia", "github": "GitHub"}
     selected_sources: list[str] = []
     for name, label in _labels.items():
         avail = name in _available
         if st.checkbox(
-            label if avail else f"{label} — key missing",
+            label if avail else f"{label} (no key)",
             value=avail, disabled=not avail, key=f"src-{name}",
         ) and avail:
             selected_sources.append(name)
     st.session_state["enabled_sources"] = selected_sources
 
     st.divider()
-    st.subheader("📚 Previous Sessions")
+    st.markdown("<div class='side-label'>History</div>", unsafe_allow_html=True)
     sessions = list_sessions()
     if not sessions:
-        st.caption("No saved sessions yet.")
-    for s in sessions[:20]:
-        icon = "✅" if s["status"] == "complete" else "🟡"
-        label = f"{icon} {s['goal'][:34]} · {s['created_at'][:10]}"
+        st.caption("No sessions yet.")
+    show_n = st.session_state.get("history_show", 5)
+    for s in sessions[:show_n]:
+        dot = "🟢" if s["status"] == "complete" else "🟡"
+        label = f"{dot} {s['goal'][:35]} · {s['created_at'][:10]}"
         if st.button(label, key=f"sess-{s['id']}", use_container_width=True):
             st.session_state["active_session"] = s["id"]
             st.session_state["prefill_goal"] = s["goal"]
             st.rerun()
+    if len(sessions) > show_n:
+        if st.button(f"View all ({len(sessions)})", key="view-all", use_container_width=True):
+            st.session_state["history_show"] = len(sessions)
+            st.rerun()
+
+    st.markdown(
+        "<div class='footer-side'>Built by "
+        "<a href='https://aarti-tech-portfolio.vercel.app' target='_blank'>Aarti Panchal</a>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
 
 
 if start:

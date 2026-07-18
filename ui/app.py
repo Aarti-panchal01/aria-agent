@@ -44,95 +44,95 @@ st.set_page_config(page_title="ARIA — Research Agent", page_icon="🔬", layou
 
 _CSS = """
 <style>
-/* Global — Perplexity/Notion warm off-white aesthetic */
-.stApp { background-color: #f7f7f5; }
+/* Global — dark "techy" aesthetic (deep navy + indigo/violet accents) */
+.stApp {
+    background-color: #0b0f19;
+    background-image: radial-gradient(circle at 15% -10%, #171e30 0%, rgba(11,15,25,0) 45%),
+                      radial-gradient(circle at 100% 0%, #1a1533 0%, rgba(11,15,25,0) 40%);
+    color: #e5e7eb;
+}
 .main .block-container { max-width: 900px; padding: 2rem 2rem; }
 
 /* Sidebar */
 section[data-testid="stSidebar"] {
-    background-color: #efefed;
-    border-right: 1px solid #e5e7eb;
+    background-color: #0e1320;
+    border-right: 1px solid #1f2637;
 }
-section[data-testid="stSidebar"] .stMarkdown { font-size: 13px; }
+section[data-testid="stSidebar"] .stMarkdown { font-size: 13px; color: #cbd5e1; }
 
-/* Pin the sidebar footer to the bottom, always visible */
-section[data-testid="stSidebar"] > div {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-}
+/* Sidebar footer — flows right after content (no forced gap), still at bottom */
 .sidebar-footer {
-    margin-top: auto;
-    padding: 1rem 0 0.5rem 0;
-    border-top: 1px solid #e5e7eb;
+    margin-top: 1.25rem;
+    padding: 0.75rem 0 0.5rem 0;
+    border-top: 1px solid #1f2637;
     font-size: 11px;
-    color: #9ca3af;
+    color: #64748b;
 }
-.sidebar-footer a {
-    color: #6366f1;
-    text-decoration: none;
-    font-weight: 500;
-}
+.sidebar-footer a { color: #818cf8; text-decoration: none; font-weight: 500; }
 
 /* Typography */
-h1 { font-size: 1.8rem !important; font-weight: 700 !important; color: #111827 !important; }
-h2 { font-size: 1.2rem !important; font-weight: 600 !important; color: #374151 !important; }
-h3 { font-size: 1rem !important; font-weight: 600 !important; color: #6366f1 !important; }
+h1 { font-size: 1.8rem !important; font-weight: 700 !important; color: #f3f4f6 !important; }
+h2 { font-size: 1.2rem !important; font-weight: 600 !important; color: #cbd5e1 !important; }
+h3 { font-size: 1rem !important; font-weight: 600 !important; color: #a5b4fc !important; }
+p, span, label, li { color: #cbd5e1; }
 
-/* Buttons — gradient purple, full width */
+/* Buttons — gradient indigo→violet with subtle glow */
 .stButton > button {
     background: linear-gradient(135deg, #6366f1, #8b5cf6) !important;
-    color: white !important;
+    color: #ffffff !important;
     border: none !important;
     border-radius: 8px !important;
     font-weight: 600 !important;
     font-size: 14px !important;
     padding: 0.5rem 1rem !important;
     width: 100% !important;
-    transition: opacity 0.2s !important;
+    box-shadow: 0 2px 12px rgba(99,102,241,0.28) !important;
+    transition: opacity 0.2s, box-shadow 0.2s !important;
 }
-.stButton > button:hover { opacity: 0.9 !important; }
+.stButton > button:hover { opacity: 0.92 !important; box-shadow: 0 3px 18px rgba(139,92,246,0.4) !important; }
 .stDownloadButton > button {
-    background: #ffffff !important; color: #6366f1 !important;
+    background: transparent !important; color: #a5b4fc !important;
     border: 1px solid #6366f1 !important; border-radius: 8px !important;
     font-weight: 600 !important; font-size: 13px !important;
+}
+input, textarea, .stTextArea textarea {
+    background-color: #131826 !important; color: #e5e7eb !important;
+    border: 1px solid #2a3244 !important;
 }
 
 /* Cognitive loop step cards */
 .step-card {
-    background: #f8f9fa; border: 1px solid #e5e7eb; border-radius: 8px;
-    padding: 8px 12px; margin: 4px 0; font-size: 13px; color: #111827;
+    background: #131826; border: 1px solid #1f2637; border-radius: 8px;
+    padding: 8px 12px; margin: 4px 0; font-size: 13px; color: #e5e7eb;
     display: flex; justify-content: space-between; align-items: center; gap: 12px;
 }
-.step-card.plan { border-left: 3px solid #9ca3af; }
+.step-card.plan { border-left: 3px solid #64748b; }
 .step-card.execute { border-left: 3px solid #10b981; }
-.step-card.critic { border-left: 3px solid #6366f1; }
+.step-card.critic { border-left: 3px solid #818cf8; }
 .step-card.replan { border-left: 3px solid #f59e0b; }
-.step-card.complete { border-left: 3px solid #10b981; background: #f0fdf4; }
-.step-card .ts { color: #9ca3af; font-size: 11px; white-space: nowrap; }
+.step-card.complete { border-left: 3px solid #10b981; background: #0f2318; }
+.step-card .ts { color: #64748b; font-size: 11px; white-space: nowrap; }
 
-/* Report card */
-.report-container {
-    background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px;
-    padding: 1.5rem; margin-top: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
-}
+/* Report card + markdown */
 [data-testid="stMarkdownContainer"] h2 {
-    border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; margin-top: 1.3rem;
+    border-bottom: 1px solid #2a3244; padding-bottom: 4px; margin-top: 1.3rem;
 }
 [data-testid="stMarkdownContainer"] table { border-collapse: collapse; width: 100%; margin: 8px 0; }
 [data-testid="stMarkdownContainer"] th, [data-testid="stMarkdownContainer"] td {
-    border: 1px solid #e5e7eb; padding: 6px 10px;
+    border: 1px solid #2a3244; padding: 6px 10px;
 }
 [data-testid="stMarkdownContainer"] thead th { background: #6366f1; color: #fff; }
-[data-testid="stMarkdownContainer"] tbody tr:nth-child(even) { background: #f8f9fa; }
+[data-testid="stMarkdownContainer"] tbody tr:nth-child(even) { background: #131826; }
 [data-testid="stMarkdownContainer"] li { margin-bottom: 4px; }
+[data-testid="stMarkdownContainer"] a { color: #a5b4fc; }
+div[data-testid="stExpander"] { border: 1px solid #1f2637; border-radius: 8px; }
 
-/* Badges & suggestion chips */
-.badge { display:inline-block; background:#eef0ff; color:#6366f1; border-radius:999px;
+/* Badges */
+.badge { display:inline-block; background:#1e213a; color:#a5b4fc; border-radius:999px;
     padding:2px 10px; font-size:12px; font-weight:600; }
-.badge.live { background:#f0fdf4; color:#10b981; }
-.wordcount { float:right; background:#f8f9fa; border:1px solid #e5e7eb; border-radius:999px;
-    padding:2px 10px; font-size:12px; color:#6b7280; }
+.badge.live { background:#0f2318; color:#34d399; }
+.wordcount { float:right; background:#131826; border:1px solid #2a3244; border-radius:999px;
+    padding:2px 10px; font-size:12px; color:#94a3b8; }
 
 /* Progress bar */
 .stProgress > div > div > div {
@@ -140,20 +140,17 @@ h3 { font-size: 1rem !important; font-weight: 600 !important; color: #6366f1 !im
 }
 
 /* Empty state */
-.empty-state { text-align:center; color:#374151; margin-top:3rem; }
+.empty-state { text-align:center; color:#cbd5e1; margin-top:3rem; }
 .empty-state .big { font-size:3rem; }
-.empty-state h2 { border:none !important; }
-.empty-state p { color:#6b7280; max-width:620px; margin:0.5rem auto; font-size:15px; }
+.empty-state h2 { border:none !important; color:#f3f4f6 !important; }
+.empty-state p { color:#94a3b8; max-width:620px; margin:0.5rem auto; font-size:15px; }
 
-/* Sidebar branding + history + footer */
-.brand { font-size:1.4rem; font-weight:700; color:#111827; }
-.brand-sub { font-size:12px; color:#6b7280; margin-top:-4px; }
-.brand-ver { font-size:11px; color:#9ca3af; }
-.side-label { font-size:12px; color:#9ca3af; font-weight:600; text-transform:uppercase;
+/* Sidebar branding + labels */
+.brand { font-size:1.4rem; font-weight:700; color:#f3f4f6; }
+.brand-sub { font-size:12px; color:#94a3b8; margin-top:-4px; }
+.brand-ver { font-size:11px; color:#64748b; }
+.side-label { font-size:12px; color:#64748b; font-weight:600; text-transform:uppercase;
     letter-spacing:0.04em; margin:2px 0; }
-.session-line { font-size:12px; color:#374151; }
-.footer-side { color:#9ca3af; font-size:11px; margin-top:1rem; }
-.footer-side a { color:#6366f1; text-decoration:none; }
 </style>
 """
 st.markdown(_CSS, unsafe_allow_html=True)
@@ -281,7 +278,7 @@ def _render_progress(slot, done: int, total: int, elapsed: str = "", complete: b
     else:
         label = "Starting…"
     slot.markdown(
-        f"<div style='background:#eef0f4;border-radius:6px;height:20px;width:100%;"
+        f"<div style='background:#1f2637;border-radius:6px;height:20px;width:100%;"
         f"overflow:hidden;margin:4px 0;'>"
         f"<div style='width:{max(pct, 14)}%;background:{color};height:100%;display:flex;"
         f"align-items:center;justify-content:center;color:#fff;font-size:12px;"

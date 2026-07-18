@@ -7,6 +7,7 @@ source material — no hardcoded facts) and writes a full reasoning trace.
 
 import json
 import os
+import re
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_groq import ChatGroq
@@ -18,18 +19,33 @@ logger = get_logger(__name__)
 
 OUTPUT_DIR = "./output"
 
+# Report-length policy.
+MIN_WORDS = 300        # below this, regenerate once with an "expand" instruction
+TARGET_WORDS = 600     # asked-for minimum in the prompt
+
 _SYSTEM_PROMPT = (
-    "You are a research report writer. Using ONLY the provided findings, write "
-    "a structured report.\n\n"
-    "Structure:\n"
-    "1. Executive Summary — 3 sentences max\n"
-    "2. Comparison Table — one row per meaningful dimension, only rows where "
-    "you found real data in the findings. Emit clean GitHub-flavored markdown "
-    "(a header row, one separator row, then data rows)\n"
-    "3. Key Conclusions — 3 bullet points\n"
-    "4. Key Takeaway — one sentence\n\n"
-    "Never invent data. If you found nothing about a subject, say so honestly. "
-    "Use simple, plain English."
+    "You are a research report writer. Using ONLY the provided findings, write a "
+    f"thorough, substantive markdown research report of at least {TARGET_WORDS} words.\n\n"
+    "Use exactly these sections, each with a markdown '## ' header:\n"
+    "## Executive Summary\n"
+    "  2-3 full paragraphs summarizing the topic and the most important insights.\n"
+    "## Background\n"
+    "  What the topic is, and relevant context or history.\n"
+    "## Key Findings\n"
+    "  A numbered list. Each item is 2-3 sentences and ENDS with a source "
+    "attribution tag taken from the findings, e.g. [Web], [arXiv], [Wikipedia], "
+    "[GitHub].\n"
+    "## Analysis\n"
+    "  What the findings mean, the trade-offs, and the implications.\n"
+    "## Comparison Table\n"
+    "  A clean GitHub-flavored markdown table (header row, ONE separator row, then "
+    "data rows) covering the most meaningful dimensions. Only include rows supported "
+    "by the findings.\n"
+    "## Conclusion\n"
+    "  One paragraph with a clear, decisive takeaway.\n\n"
+    "Rules: Never invent data or URLs. If a subject has no data, say so honestly. "
+    "Write substantive prose with depth, not filler. Do NOT write a Sources section "
+    "— it is appended automatically."
 )
 
 
@@ -109,12 +125,33 @@ def _build_report_prompt(goal: str, results: list[dict]) -> str:
     findings_text = ""
     for idx, result in enumerate(results, 1):
         output = result.get("output", "No output")
-        truncated = output[:500] + "..." if len(output) > 500 else output
-        findings_text += f"\n### Finding {idx}: {result.get('task', 'Unknown')}\n{truncated}\n"
+        truncated = output[:1200] + "..." if len(output) > 1200 else output
+        srcs = ", ".join(result.get("sources", []) or []) or "unknown"
+        findings_text += (
+            f"\n### Finding {idx}: {result.get('task', 'Unknown')} "
+            f"(sources: {srcs})\n{truncated}\n"
+        )
     return (
         f"# Research Goal\n{goal}\n"
         f"\n# Research Findings (Your Only Source of Truth)\n{findings_text}"
     )
+
+
+def _collect_urls(results: list[dict]) -> list[str]:
+    """Extract unique source URLs (in order) from the findings' raw output."""
+    urls: list[str] = []
+    seen: set[str] = set()
+    for r in results:
+        for match in re.findall(r"URL:\s*(\S+)", r.get("output", "") or ""):
+            url = match.strip().rstrip(".,)")
+            if url and url not in seen and url.lower() != "no":
+                seen.add(url)
+                urls.append(url)
+    return urls
+
+
+def _word_count(text: str) -> int:
+    return len(text.split())
 
 
 def _reasoning_trace(goal: str, results: list[dict], memory_stats: dict) -> str:
@@ -147,17 +184,38 @@ def report_generator_node(state: AgentState) -> dict:
     memory_stats = state.get("memory_stats", {"retrieved": 0, "total": 0})
 
     llm = ChatGroq(
-        model=GROQ_MODEL, api_key=require_groq_key(), temperature=0.2, max_tokens=800
+        model=GROQ_MODEL, api_key=require_groq_key(), temperature=0.2, max_tokens=2048
     )
-    messages = [
-        SystemMessage(content=_SYSTEM_PROMPT),
-        HumanMessage(content=_build_report_prompt(goal, results)),
-    ]
+    prompt = _build_report_prompt(goal, results)
 
-    response = invoke_with_retry(llm, messages, context="report_generator")
-    if response is not None:
-        report_markdown = response.content
-    else:
+    def _generate(expand: bool) -> str | None:
+        system = _SYSTEM_PROMPT
+        if expand:
+            system += (
+                "\n\nYour previous draft was too short. Expand every section with "
+                "more detail, specific facts from the findings, and deeper analysis. "
+                f"The report MUST be at least {TARGET_WORDS} words."
+            )
+        resp = invoke_with_retry(
+            llm,
+            [SystemMessage(content=system), HumanMessage(content=prompt)],
+            context="report_generator",
+        )
+        return resp.content if resp is not None else None
+
+    report_markdown = _generate(expand=False)
+
+    # Regenerate once if the report came back too thin.
+    if report_markdown and _word_count(report_markdown) < MIN_WORDS:
+        logger.info(
+            "Report too short (%d words); regenerating with expansion",
+            _word_count(report_markdown),
+        )
+        expanded = _generate(expand=True)
+        if expanded and _word_count(expanded) > _word_count(report_markdown):
+            report_markdown = expanded
+
+    if not report_markdown:
         report_markdown = (
             f"# Research Report\n\n## Goal\n{goal}\n\n## Findings\n\n"
             f"Encountered an error generating the report. "
@@ -165,6 +223,11 @@ def report_generator_node(state: AgentState) -> dict:
         )
 
     report_markdown = align_markdown_table(report_markdown)
+
+    # Append an accurate Sources section from the URLs actually retrieved.
+    urls = _collect_urls(results)
+    if urls:
+        report_markdown += "\n\n## Sources\n\n" + "\n".join(f"- {u}" for u in urls) + "\n"
 
     # Append an honest memory footer.
     report_markdown += (

@@ -13,17 +13,27 @@
 ## What is ARIA?
 
 ARIA is an autonomous research agent built on **LangGraph**. You give it a
-research question. It breaks the question into subtasks, searches across multiple
-sources, scores each finding across 4 dimensions, replans the weak ones, and
-produces a structured multi-section report.
+research question. It breaks the question into subtasks, searches across four
+sources in parallel (**Web · arXiv · Wikipedia · GitHub**), scores each finding
+across 4 dimensions, replans only the weak ones, and produces a structured,
+multi-section report with inline sources and one-click PDF export. Every run is
+saved to a resumable session history.
 
-**This is not a chatbot.** It is a cognitive loop you can watch run in real time.
+**This is not a chatbot.** It is a cognitive loop you can watch run in real time
+in a monospace "blueprint" console UI.
 
 ---
 
 ## Live Demo
 
 ![ARIA live research run](assets/demo.gif)
+
+*A real run in the Streamlit UI (blueprint theme): you type a question, ARIA
+plans it into subtasks and streams the **cognitive loop live** — each executor
+search, critic score, and replan appears as it happens with a running progress
+bar — then renders a structured, sourced report you can export to PDF. Sources
+(Web · arXiv · Wikipedia · GitHub) are toggleable, and every past run is saved
+to a resumable history.*
 
 🔗 **Try it live:** [agent-aria.streamlit.app](https://agent-aria.streamlit.app)
 

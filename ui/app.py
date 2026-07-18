@@ -434,14 +434,6 @@ def show_saved_session(session_id: str) -> None:
 # --- Sidebar controls ------------------------------------------------------
 
 with st.sidebar:
-    st.markdown(
-        "<div class='brand'>🔬 ARIA</div>"
-        "<div class='brand-sub'>Autonomous Research Agent</div>"
-        "<div class='brand-ver'>v0.3.0 · agent-aria.streamlit.app</div>",
-        unsafe_allow_html=True,
-    )
-    st.divider()
-
     if st.button("➕ New Research", use_container_width=True):
         for k in ("active_session", "prefill_goal", "history_show"):
             st.session_state.pop(k, None)

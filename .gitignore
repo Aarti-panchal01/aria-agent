@@ -10,6 +10,9 @@
 *.log
 .aria_sessions/
 
+# Local screenshot capture scratch (raw frames; the built GIF lives in assets/)
+.demo/
+
 # Python
 __pycache__/
 *.py[cod]

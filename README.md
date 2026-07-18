@@ -6,6 +6,14 @@
 ![CI](https://github.com/Aarti-panchal01/aria-agent/actions/workflows/ci.yml/badge.svg)
 &nbsp;·&nbsp; Python 3.10+ &nbsp;·&nbsp; LangGraph · ChromaDB · Tavily · Groq &nbsp;·&nbsp; MIT
 
+## Demo
+
+![ARIA live research run](assets/demo.gif)
+
+*A real run (Streamlit UI): ARIA plans 6 subtasks, searches multiple sources,
+self-scores each finding, and streams the cognitive loop live — then renders a
+multi-section, sourced report with one-click PDF export.*
+
 ---
 
 ## What makes ARIA different

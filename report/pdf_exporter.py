@@ -74,8 +74,10 @@ def _table_flowable(block: list[str], styles) -> Table:
                 ("BACKGROUND", (0, 0), (-1, 0), _INDIGO),
                 ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#d1d5db")),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f3f4f6")]),
+                ("GRID", (0, 0), (-1, -1), 0.75, colors.HexColor("#9ca3af")),
+                ("BOX", (0, 0), (-1, -1), 1.0, _INDIGO),
+                ("LINEBELOW", (0, 0), (-1, 0), 1.0, _INDIGO),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#eef0f4")]),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 6),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 6),
@@ -189,7 +191,7 @@ def export_to_pdf(report_text: str, session_id: str, goal: str) -> bytes:
     )
 
     story: list = [
-        Paragraph("🔬 ARIA Research Report", styles["AriaTitle"]),
+        Paragraph("ARIA Research Report", styles["AriaTitle"]),
         Spacer(1, 6),
         Paragraph(
             f"<b>Goal:</b> {_inline(goal)}<br/>"

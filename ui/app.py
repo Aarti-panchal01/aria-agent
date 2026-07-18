@@ -44,16 +44,35 @@ st.set_page_config(page_title="ARIA — Research Agent", page_icon="🔬", layou
 
 _CSS = """
 <style>
-/* Global — Perplexity/Notion light aesthetic */
-.stApp { background-color: #ffffff; }
+/* Global — Perplexity/Notion warm off-white aesthetic */
+.stApp { background-color: #f7f7f5; }
 .main .block-container { max-width: 900px; padding: 2rem 2rem; }
 
 /* Sidebar */
 section[data-testid="stSidebar"] {
-    background-color: #f8f9fa;
+    background-color: #efefed;
     border-right: 1px solid #e5e7eb;
 }
 section[data-testid="stSidebar"] .stMarkdown { font-size: 13px; }
+
+/* Pin the sidebar footer to the bottom, always visible */
+section[data-testid="stSidebar"] > div {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+.sidebar-footer {
+    margin-top: auto;
+    padding: 1rem 0 0.5rem 0;
+    border-top: 1px solid #e5e7eb;
+    font-size: 11px;
+    color: #9ca3af;
+}
+.sidebar-footer a {
+    color: #6366f1;
+    text-decoration: none;
+    font-weight: 500;
+}
 
 /* Typography */
 h1 { font-size: 1.8rem !important; font-weight: 700 !important; color: #111827 !important; }
@@ -476,8 +495,8 @@ with st.sidebar:
             st.rerun()
 
     st.markdown(
-        "<div class='footer-side'>Built by "
-        "<a href='https://aarti-tech-portfolio.vercel.app' target='_blank'>Aarti Panchal</a>"
+        '<div class="sidebar-footer">Built by '
+        '<a href="https://aarti-tech-portfolio.vercel.app" target="_blank">Aarti Panchal</a>'
         "</div>",
         unsafe_allow_html=True,
     )

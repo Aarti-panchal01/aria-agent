@@ -3,6 +3,13 @@
 .env.local
 .env.production
 
+# Streamlit real secrets (the .example is committed)
+.streamlit/secrets.toml
+
+# Logs and persistent session data
+*.log
+.aria_sessions/
+
 # Python
 __pycache__/
 *.py[cod]

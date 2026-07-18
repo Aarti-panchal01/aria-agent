@@ -120,6 +120,30 @@ with a copy button and a per-task reasoning trace in the sidebar.
 
 ---
 
+## Deploy to Streamlit Cloud
+
+ARIA ships with a ready-to-deploy Streamlit app.
+
+1. Push this repo to GitHub (already done if you're reading this on GitHub).
+2. Go to [share.streamlit.io](https://share.streamlit.io) and **connect your
+   GitHub account**.
+3. Create a new app pointing at this repo, branch `main`, **main file
+   `ui/app.py`**.
+4. Under **App → Settings → Secrets**, add your keys (see
+   [`.streamlit/secrets.toml.example`](.streamlit/secrets.toml.example)):
+   ```toml
+   GROQ_API_KEY = "..."
+   TAVILY_API_KEY = "..."
+   # GITHUB_TOKEN = "..."   # optional, raises the GitHub source's rate limit
+   ```
+5. Deploy. The theme in [`.streamlit/config.toml`](.streamlit/config.toml) is
+   applied automatically.
+
+Streamlit Cloud injects those secrets into the environment, and ARIA reads its
+keys from `os.environ`, so no code changes are needed.
+
+---
+
 ## Tech stack
 
 | Layer | Technology |

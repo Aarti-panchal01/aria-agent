@@ -1,41 +1,35 @@
 """
 Memory writer node for the ARIA research agent.
 
-Persists completed research findings to ChromaDB for future retrieval
-and context injection in planning phases.
+Persists the most recent finding to ChromaDB (with content-hash
+deduplication) for retrieval in future runs.
 """
 
-from state import AgentState
+from config import get_logger
 from memory.chroma_store import save_finding
+from state import AgentState
+
+logger = get_logger(__name__)
 
 
 def memory_writer_node(state: AgentState) -> dict:
     """
-    Memory writer node: persist the last result to ChromaDB.
-    
-    Extracts the most recent research finding from state and saves it
-    to the persistent vector store for context retrieval in future runs.
-    This is a side-effect node that does not modify state.
-    
+    Persist the last finding to ChromaDB. Side-effect only.
+
     Args:
         state (AgentState): Current agent state.
-    
+
     Returns:
-        dict: Empty dict (state unchanged, side-effect operation).
+        dict: Empty (state unchanged).
     """
     results = state.get("results", [])
-    
-    # Handle edge case: no results to save
     if not results:
         return {}
-    
-    # Get the last result
+
     last_result = results[-1]
-    task = last_result.get("task", "Unknown task")
-    output = last_result.get("output", "No output")
-    
-    # Save to ChromaDB
-    save_finding(task=task, output=output)
-    
-    # Return empty dict (no state modifications)
+    saved = save_finding(
+        task=last_result.get("task", "Unknown task"),
+        output=last_result.get("output", "No output"),
+    )
+    logger.info("Memory writer: %s", "saved new finding" if saved else "skipped duplicate")
     return {}

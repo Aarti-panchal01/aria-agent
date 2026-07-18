@@ -1,33 +1,34 @@
 """
 Memory reader node for the ARIA research agent.
 
-Retrieves relevant past findings from ChromaDB and injects them
-as context for the planner to avoid redundant work.
+Retrieves relevant past findings from ChromaDB and injects them as context
+for the planner, along with lookup statistics for the final report.
 """
 
-from state import AgentState
+from config import get_logger
 from memory.chroma_store import retrieve_relevant
+from state import AgentState
+
+logger = get_logger(__name__)
 
 
 def memory_reader_node(state: AgentState) -> dict:
     """
-    Memory reader node: retrieve relevant past findings for the goal.
-    
-    Queries ChromaDB for findings semantically similar to the research goal
-    and returns them as formatted context for injection into planning phase.
-    
+    Retrieve relevant past findings for the research goal.
+
     Args:
         state (AgentState): Current agent state.
-    
+
     Returns:
-        dict: Updated state with memory_context field populated.
+        dict: ``memory_context`` (formatted text) and ``memory_stats``
+        ({"retrieved", "total"}).
     """
     goal = state.get("goal", "")
-    
-    # Retrieve relevant past findings
-    if goal:
-        memory_context = retrieve_relevant(query=goal, n=3)
-    else:
-        memory_context = "No goal provided."
-    
-    return {"memory_context": memory_context}
+    if not goal:
+        return {"memory_context": "", "memory_stats": {"retrieved": 0, "total": 0}}
+
+    context, stats = retrieve_relevant(query=goal, n=3)
+    logger.info(
+        "Memory: retrieved %d of %d stored findings", stats["retrieved"], stats["total"]
+    )
+    return {"memory_context": context, "memory_stats": stats}

@@ -279,9 +279,9 @@ def _render_progress(slot, done: int, total: int, elapsed: str = "", complete: b
         label = f"Complete · {total} tasks · {elapsed}"
         pct = 100
     elif total:
-        label = f"Researching… {done} of {total} tasks"
+        label = f"Researching… {done} of {total} tasks" + (f" · {elapsed}" if elapsed else "")
     else:
-        label = "Starting…"
+        label = f"Starting…{(' · ' + elapsed) if elapsed else ''}"
     slot.markdown(
         f"<div style='background:#0b2d34;border:1px solid rgba(52,213,200,0.25);border-radius:4px;"
         f"height:20px;width:100%;overflow:hidden;margin:4px 0;'>"
@@ -392,7 +392,7 @@ def run(goal: str, session_id: str | None = None) -> None:
             _render_feed(feed_slot, steps)
             total = len(acc.get("subtasks", []))
             done = min(acc.get("current_task_index", 0), total) if total else 0
-            _render_progress(prog_slot, done, total)
+            _render_progress(prog_slot, done, total, elapsed=_fmt_elapsed(datetime.now() - started))
     except Exception as exc:  # noqa: BLE001
         st.error(f"Run failed: {exc}")
         return

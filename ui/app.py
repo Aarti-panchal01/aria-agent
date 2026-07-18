@@ -1,8 +1,9 @@
 """
-Streamlit UI for ARIA — live cognitive-loop research interface.
+Streamlit UI for ARIA — real-time streaming cognitive-loop research interface.
 
-Streams the LangGraph execution node-by-node so the user watches ARIA plan,
-execute, critique, replan, and report in real time (not behind a spinner).
+The left panel streams each cognitive step as it happens (planner → executor →
+critic → replanner → memory → report), with timestamps and a progress bar; the
+final report renders on the right. The streaming IS the demo.
 
 Run with:
     streamlit run ui/app.py
@@ -10,6 +11,7 @@ Run with:
 
 import os
 import sys
+from datetime import datetime
 
 import streamlit as st
 
@@ -18,6 +20,20 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from graph import aria_graph  # noqa: E402
 from main import initial_state, sanitize_goal  # noqa: E402
+from state import merge_results  # noqa: E402
+
+
+def _bridge_secrets_to_env() -> None:
+    """Copy Streamlit Cloud secrets into os.environ (ARIA reads os.environ)."""
+    try:
+        for key in ("GROQ_API_KEY", "TAVILY_API_KEY", "GITHUB_TOKEN"):
+            if key in st.secrets and not os.environ.get(key):
+                os.environ[key] = str(st.secrets[key])
+    except Exception:
+        pass  # no secrets file locally — .env is used instead
+
+
+_bridge_secrets_to_env()
 
 st.set_page_config(page_title="ARIA — Research Agent", page_icon="🔬", layout="wide")
 
@@ -27,102 +43,149 @@ st.caption(
     "Watch the cognitive loop run live."
 )
 
-with st.sidebar:
-    st.header("Run")
-    goal = st.text_area(
-        "Research goal",
-        placeholder="Compare Redis vs Memcached for caching",
-        height=100,
-    )
-    start = st.button("Run ARIA", type="primary", use_container_width=True)
-    st.divider()
-    st.markdown(
-        "**Requires** `GROQ_API_KEY` and `TAVILY_API_KEY` in your environment "
-        "or `.env` file."
-    )
-    trace_box = st.container()
+
+def _now() -> str:
+    return datetime.now().strftime("%H:%M:%S")
 
 
-def _describe_step(node: str, payload: dict) -> str:
-    """Human-readable one-liner for a streamed node update."""
+def _cards_for(node: str, payload: dict, acc: dict) -> list[str]:
+    """Return timestamped step-card lines for one streamed node update."""
+    ts = _now()
+    cards: list[str] = []
+
     if node == "memory_reader":
         stats = payload.get("memory_stats", {})
-        return f"🧠 Memory: retrieved {stats.get('retrieved', 0)} of {stats.get('total', 0)} past findings"
-    if node == "planner":
+        cards.append(
+            f"🧠 **Memory** — retrieved {stats.get('retrieved', 0)} of "
+            f"{stats.get('total', 0)} past findings · `{ts}`"
+        )
+    elif node == "planner":
         subs = payload.get("subtasks", [])
-        return f"🗺️ Planned {len(subs)} subtasks"
-    if node == "executor":
+        cards.append(f"🗺️ **Planned** {len(subs)} subtasks · `{ts}`")
+    elif node == "executor":
+        results = acc.get("results", [])
         idx = payload.get("current_task_index", 0)
-        return f"🔎 Executed subtask {idx} (web search)"
-    if node == "critic":
+        total = len(acc.get("subtasks", [])) or "?"
+        last = results[-1] if results else {}
+        task = (last.get("task") or "")[:80]
+        cards.append(f'⚡ **Executing task {idx}/{total}:** "{task}" · `{ts}`')
+        out = last.get("output", "")
+        n = out.count("Title:") if isinstance(out, str) else 0
+        if isinstance(out, str) and out.startswith("Search failed"):
+            cards.append(f"🔍 Search failed (handled gracefully) · `{ts}`")
+        else:
+            cards.append(f"🔍 Search returned {n} result(s) · `{ts}`")
+    elif node == "critic":
         results = payload.get("results", [])
-        if results and results[-1].get("critic"):
-            c = results[-1]["critic"]
-            return (
-                f"⚖️ Critic scored {c['overall']}/10 "
-                f"(relevance {c['relevance']}, specificity {c['specificity']}, "
-                f"sources {c['source_quality']}, completeness {c['completeness']})"
+        c = (results[-1].get("critic") or {}) if results else {}
+        if c:
+            cards.append(
+                f"🎯 **Critic scored** {c.get('overall')}/10 "
+                f"(relevance:{c.get('relevance')}, specificity:{c.get('specificity')}, "
+                f"source:{c.get('source_quality')}, completeness:{c.get('completeness')}) · `{ts}`"
             )
-        return "⚖️ Critic scored the finding"
-    if node == "replanner":
-        return f"♻️ Replanning weak subtask (attempt {payload.get('replan_count', '?')})"
-    if node == "memory_writer":
-        return "💾 Saved finding to memory"
-    if node == "terminator":
-        return "🏁 Done" if payload.get("is_done") else "➡️ Continuing"
-    if node == "report_generator":
-        return "📝 Report generated"
-    return f"• {node}"
+    elif node == "replanner":
+        prev = acc.get("results", [])
+        last_score = prev[-1].get("score", "?") if prev else "?"
+        idx = payload.get("current_task_index", 0)
+        cards.append(f"♻️ **Replanning task {idx}:** score was {last_score}/10 · `{ts}`")
+    elif node == "memory_writer":
+        cards.append(f"💾 Writing to memory… · `{ts}`")
+    elif node == "report_generator":
+        cards.append(f"✅ **Research complete** · `{ts}`")
+
+    return cards
 
 
-def run() -> None:
-    """Execute the graph, streaming progress and rendering the final report."""
+def _merge(acc: dict, payload: dict) -> None:
+    """Accumulate streamed deltas into a running state snapshot."""
+    for k, v in payload.items():
+        if k == "results":
+            acc["results"] = merge_results(acc.get("results", []), v)
+        else:
+            acc[k] = v
+
+
+def run(goal: str) -> None:
+    """Stream a research run: live feed on the left, report on the right."""
     try:
         clean_goal = sanitize_goal(goal)
     except ValueError as exc:
         st.error(str(exc))
         return
 
-    progress = st.empty()
-    steps: list[str] = []
-    final_state: dict = {}
+    st.markdown(f"**Session goal:** {clean_goal} · _started {_now()}_")
+    feed_col, report_col = st.columns([1, 1], gap="large")
 
-    with st.status("Running ARIA…", expanded=True) as status:
+    with feed_col:
+        st.subheader("🧠 Cognitive loop (live)")
+        progress = st.progress(0.0, text="Starting…")
+        feed = st.empty()
+    with report_col:
+        st.subheader("📊 Research report")
+        report_slot = st.empty()
+        report_slot.info("The report will appear here when the run completes.")
+
+    steps: list[str] = []
+    acc: dict = {}
+
+    try:
         for update in aria_graph.stream(initial_state(clean_goal)):
             for node, payload in update.items():
-                steps.append(_describe_step(node, payload))
-                progress.markdown("\n\n".join(f"- {s}" for s in steps))
                 if isinstance(payload, dict):
-                    final_state.update(payload)
-        status.update(label="Research complete ✅", state="complete")
+                    _merge(acc, payload)
+                    steps.extend(_cards_for(node, payload, acc))
 
-    report = final_state.get("final_report", "")
-    if report:
-        st.subheader("📊 Research Report")
-        st.code(report, language="markdown")  # gives a built-in copy button
-        st.markdown(report)
+            feed.markdown("\n\n".join(f"- {s}" for s in reversed(steps)))
 
-    results = sorted(final_state.get("results", []), key=lambda r: r.get("task_index", 0))
-    with trace_box:
+            total = len(acc.get("subtasks", []))
+            done = min(acc.get("current_task_index", 0), total) if total else 0
+            frac = (done / total) if total else 0.0
+            progress.progress(frac, text=f"{done}/{total or '?'} tasks")
+    except Exception as exc:  # noqa: BLE001
+        st.error(f"Run failed: {exc}")
+        return
+
+    progress.progress(1.0, text="Complete")
+    report = acc.get("final_report", "")
+    results = sorted(acc.get("results", []), key=lambda r: r.get("task_index", 0))
+
+    with report_col:
+        report_slot.empty()
+        if report:
+            st.markdown(report)
+            with st.expander("Copy raw markdown"):
+                st.code(report, language="markdown")
+        st.session_state["last_report"] = report
+        st.session_state["last_goal"] = clean_goal
+        st.session_state["last_results"] = results
+
+    with st.sidebar:
         st.header("Reasoning trace")
         for r in results:
             c = r.get("critic") or {}
-            with st.expander(f"Task {r.get('task_index', '?')}: {r.get('task', '')[:60]}"):
+            with st.expander(f"Task {r.get('task_index', '?')}: {r.get('task', '')[:50]}"):
                 if c:
-                    st.write(
-                        {
-                            "overall": c.get("overall"),
-                            "relevance": c.get("relevance"),
-                            "specificity": c.get("specificity"),
-                            "source_quality": c.get("source_quality"),
-                            "completeness": c.get("completeness"),
-                            "reasoning": c.get("reasoning"),
-                        }
-                    )
+                    st.write({k: c.get(k) for k in (
+                        "overall", "relevance", "specificity",
+                        "source_quality", "completeness", "reasoning")})
                 st.caption(f"query: {r.get('query', '')}")
 
 
+# --- Sidebar controls ------------------------------------------------------
+
+with st.sidebar:
+    st.header("Run")
+    goal_input = st.text_area(
+        "Research goal",
+        placeholder="Compare Redis vs Memcached for caching",
+        height=100,
+    )
+    start = st.button("Run ARIA", type="primary", use_container_width=True)
+    st.divider()
+    st.caption("Requires GROQ_API_KEY and TAVILY_API_KEY (env, .env, or Streamlit secrets).")
+
 if start:
-    run()
+    run(goal_input)
 else:
     st.info("Enter a research goal in the sidebar and click **Run ARIA**.")

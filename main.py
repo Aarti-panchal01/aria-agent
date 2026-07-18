@@ -7,6 +7,7 @@ report. The ``run_research`` helper is reused by the example harness and UI.
 
 from config import get_logger
 from graph import aria_graph
+from sessions.manager import create_session, save_session
 from state import AgentState
 
 logger = get_logger(__name__)
@@ -26,7 +27,7 @@ def sanitize_goal(goal: str) -> str:
     return "".join(c for c in goal if ord(c) >= 32 or c in "\n\t")
 
 
-def initial_state(goal: str) -> AgentState:
+def initial_state(goal: str, session_id: str = "") -> AgentState:
     """Build the initial agent state for a research goal."""
     return {
         "goal": goal,
@@ -39,20 +40,22 @@ def initial_state(goal: str) -> AgentState:
         "replan_count": 0,
         "is_done": False,
         "replan_instruction": "",
+        "session_id": session_id,
     }
 
 
-def run_research(goal: str) -> dict:
+def run_research(goal: str, session_id: str = "") -> dict:
     """
     Run the full research workflow for a goal and return the final state.
 
     Args:
         goal (str): A sanitized research goal.
+        session_id (str): Optional persistent-session id to tag the run with.
 
     Returns:
         dict: The final agent state (includes ``final_report``).
     """
-    return aria_graph.invoke(initial_state(goal))
+    return aria_graph.invoke(initial_state(goal, session_id))
 
 
 def main() -> None:
@@ -67,15 +70,19 @@ def main() -> None:
         print(f"Error: {exc}")
         return
 
+    session_id = create_session(goal)
     print(f"\n🎯 Researching: {goal}")
+    print(f"🗂️  Session: {session_id}")
     print("⏳ Executing research workflow...\n")
 
     try:
-        final_state = run_research(goal)
+        final_state = run_research(goal, session_id)
     except Exception as exc:  # noqa: BLE001
         logger.exception("Research execution failed")
         print(f"\n❌ Error during research execution: {exc}")
         return
+
+    save_session(session_id, final_state)
 
     print("\n" + "=" * 60)
     print("📊 RESEARCH REPORT")

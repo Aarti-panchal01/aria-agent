@@ -20,6 +20,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from graph import aria_graph  # noqa: E402
 from main import initial_state, sanitize_goal  # noqa: E402
+from sessions.manager import (  # noqa: E402
+    create_session,
+    list_sessions,
+    load_session,
+    save_session,
+)
 from state import merge_results  # noqa: E402
 
 
@@ -106,7 +112,7 @@ def _merge(acc: dict, payload: dict) -> None:
             acc[k] = v
 
 
-def run(goal: str) -> None:
+def run(goal: str, session_id: str | None = None) -> None:
     """Stream a research run: live feed on the left, report on the right."""
     try:
         clean_goal = sanitize_goal(goal)
@@ -114,7 +120,9 @@ def run(goal: str) -> None:
         st.error(str(exc))
         return
 
-    st.markdown(f"**Session goal:** {clean_goal} · _started {_now()}_")
+    sid = session_id or create_session(clean_goal)
+    st.session_state["active_session"] = sid
+    st.markdown(f"**Session:** {clean_goal} · `{sid[:8]}` · _started {_now()}_")
     feed_col, report_col = st.columns([1, 1], gap="large")
 
     with feed_col:
@@ -130,7 +138,7 @@ def run(goal: str) -> None:
     acc: dict = {}
 
     try:
-        for update in aria_graph.stream(initial_state(clean_goal)):
+        for update in aria_graph.stream(initial_state(clean_goal, sid)):
             for node, payload in update.items():
                 if isinstance(payload, dict):
                     _merge(acc, payload)
@@ -147,6 +155,9 @@ def run(goal: str) -> None:
         return
 
     progress.progress(1.0, text="Complete")
+    acc.setdefault("goal", clean_goal)
+    acc["session_id"] = sid
+    save_session(sid, acc)
     report = acc.get("final_report", "")
     results = sorted(acc.get("results", []), key=lambda r: r.get("task_index", 0))
 
@@ -176,16 +187,57 @@ def run(goal: str) -> None:
 
 with st.sidebar:
     st.header("Run")
+    if st.button("➕ New Research", use_container_width=True):
+        for k in ("active_session", "prefill_goal"):
+            st.session_state.pop(k, None)
+        st.rerun()
+
     goal_input = st.text_area(
         "Research goal",
+        value=st.session_state.get("prefill_goal", ""),
         placeholder="Compare Redis vs Memcached for caching",
         height=100,
     )
     start = st.button("Run ARIA", type="primary", use_container_width=True)
-    st.divider()
     st.caption("Requires GROQ_API_KEY and TAVILY_API_KEY (env, .env, or Streamlit secrets).")
+
+    st.divider()
+    st.subheader("📚 Previous Research Sessions")
+    sessions = list_sessions()
+    if not sessions:
+        st.caption("No saved sessions yet.")
+    for s in sessions[:20]:
+        icon = "✅" if s["status"] == "complete" else "🟡"
+        label = f"{icon} {s['goal'][:38]} · {s['created_at'][:10]} · {s['task_count']} tasks"
+        if st.button(label, key=f"sess-{s['id']}", use_container_width=True):
+            st.session_state["active_session"] = s["id"]
+            st.session_state["prefill_goal"] = s["goal"]
+            st.rerun()
+
+
+def show_saved_session(session_id: str) -> None:
+    """Render a previously saved session and offer to continue it."""
+    saved = load_session(session_id)
+    if not saved:
+        st.info("This session has no saved state yet. Click **Run ARIA** to start it.")
+        return
+    st.markdown(
+        f"**Session:** {saved.get('goal', '')} · `{session_id[:8]}` · "
+        f"{len(saved.get('results', []))} findings"
+    )
+    if st.button("🔄 Continue this session"):
+        run(saved.get("goal", ""), session_id)
+        return
+    report = saved.get("final_report", "")
+    if report:
+        st.markdown(report)
+    else:
+        st.caption("No report saved for this session yet.")
+
 
 if start:
     run(goal_input)
+elif st.session_state.get("active_session"):
+    show_saved_session(st.session_state["active_session"])
 else:
     st.info("Enter a research goal in the sidebar and click **Run ARIA**.")

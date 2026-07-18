@@ -38,7 +38,7 @@ aria = "main:main"
 py-modules = ["main", "graph", "state", "config", "schemas"]
 
 [tool.setuptools.packages.find]
-include = ["nodes*", "tools*", "memory*"]
+include = ["nodes*", "tools*", "memory*", "sessions*", "report*"]
 
 [tool.ruff]
 line-length = 100

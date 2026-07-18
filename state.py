@@ -50,6 +50,7 @@ class AgentState(TypedDict):
         replan_count: Number of targeted replans performed (capped).
         is_done: Termination flag.
         replan_instruction: Critic's instruction for the next targeted replan.
+        session_id: Identifier of the persistent session this run belongs to.
     """
 
     goal: str
@@ -62,3 +63,4 @@ class AgentState(TypedDict):
     replan_count: int
     is_done: bool
     replan_instruction: str
+    session_id: str

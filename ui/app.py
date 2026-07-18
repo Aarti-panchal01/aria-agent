@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from graph import aria_graph  # noqa: E402
 from main import initial_state, sanitize_goal  # noqa: E402
+from report.pdf_exporter import export_to_pdf  # noqa: E402
 from sessions.manager import (  # noqa: E402
     create_session,
     list_sessions,
@@ -112,6 +113,25 @@ def _merge(acc: dict, payload: dict) -> None:
             acc[k] = v
 
 
+def _pdf_download_button(report: str, session_id: str, goal: str, key: str) -> None:
+    """Render a one-click 'Export as PDF' download button."""
+    if not report:
+        return
+    slug = "".join(c if c.isalnum() else "-" for c in goal[:30]).strip("-") or "report"
+    fname = f"aria-research-{slug}-{datetime.now().strftime('%Y%m%d')}.pdf"
+    try:
+        pdf_bytes = export_to_pdf(report, session_id, goal)
+        st.download_button(
+            "⬇️ Export as PDF",
+            data=pdf_bytes,
+            file_name=fname,
+            mime="application/pdf",
+            key=key,
+        )
+    except Exception as exc:  # noqa: BLE001
+        st.caption(f"PDF export unavailable: {exc}")
+
+
 def run(goal: str, session_id: str | None = None) -> None:
     """Stream a research run: live feed on the left, report on the right."""
     try:
@@ -165,6 +185,7 @@ def run(goal: str, session_id: str | None = None) -> None:
         report_slot.empty()
         if report:
             st.markdown(report)
+            _pdf_download_button(report, sid, clean_goal, key="dl-run")
             with st.expander("Copy raw markdown"):
                 st.code(report, language="markdown")
         st.session_state["last_report"] = report
@@ -231,6 +252,7 @@ def show_saved_session(session_id: str) -> None:
     report = saved.get("final_report", "")
     if report:
         st.markdown(report)
+        _pdf_download_button(report, session_id, saved.get("goal", ""), key="dl-saved")
     else:
         st.caption("No report saved for this session yet.")
 

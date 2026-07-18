@@ -51,6 +51,8 @@ class AgentState(TypedDict):
         is_done: Termination flag.
         replan_instruction: Critic's instruction for the next targeted replan.
         session_id: Identifier of the persistent session this run belongs to.
+        enabled_sources: Names of research sources to query (empty => all
+            available: web, arXiv, Wikipedia, GitHub).
     """
 
     goal: str
@@ -64,3 +66,4 @@ class AgentState(TypedDict):
     is_done: bool
     replan_instruction: str
     session_id: str
+    enabled_sources: list[str]

@@ -55,14 +55,25 @@ class _FakeStructured:
         return self._score
 
 
-def _run(goal="Compare Redis vs Memcached", chat_cls=_FakeChat, search_return="Search Results:\n\nTitle: X\nURL: y\nContent: z\n"):
+def _run(goal="Compare Redis vs Memcached", chat_cls=_FakeChat, search_fail=False):
     """Invoke the real graph with all external services mocked."""
+    from tools.sources.base import SearchResult
+
     with ExitStack() as stack:
         for mod in ("planner", "executor", "critic", "report_generator", "replanner"):
             stack.enter_context(patch(f"nodes.{mod}.ChatGroq", chat_cls))
-        mock_ws = Mock()
-        mock_ws.invoke.return_value = search_return
-        stack.enter_context(patch("nodes.executor.web_search", mock_ws))
+        if search_fail:
+            stack.enter_context(
+                patch("nodes.executor.aggregate_search", side_effect=Exception("boom"))
+            )
+        else:
+            fake = [
+                SearchResult(
+                    title="X", content="z", url="http://y",
+                    source_type="web", relevance_score=0.9,
+                )
+            ]
+            stack.enter_context(patch("nodes.executor.aggregate_search", return_value=fake))
         stack.enter_context(
             patch(
                 "nodes.memory_reader.retrieve_relevant",
@@ -92,8 +103,8 @@ def test_full_graph_correct_task_count():
 
 
 def test_search_failure_does_not_crash():
-    """A failed search returns a str; the run completes without TypeError."""
-    state = _run(search_return="Search failed after 3 retries: boom")
+    """A failed search is handled; the run completes without crashing."""
+    state = _run(search_fail=True)
     assert state.get("final_report")
     assert len(state["results"]) == 3
 

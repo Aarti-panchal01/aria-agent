@@ -1,9 +1,10 @@
 """
 Executor node for the ARIA research agent.
 
-For the current subtask, asks the LLM for a focused search query, runs a
-real Tavily web search, and records the finding. No hardcoded knowledge:
-every finding comes from live search.
+For the current subtask, asks the LLM for a focused search query, then queries
+all enabled research sources (web, arXiv, Wikipedia, GitHub) in parallel and
+records the merged, source-attributed finding. No hardcoded knowledge: every
+finding comes from live search.
 """
 
 import uuid
@@ -13,7 +14,7 @@ from langchain_groq import ChatGroq
 
 from config import GROQ_MODEL, get_logger, invoke_with_retry, require_groq_key
 from state import AgentState
-from tools.search import web_search
+from tools.sources.aggregator import aggregate_search, format_results
 
 logger = get_logger(__name__)
 
@@ -69,18 +70,32 @@ def executor_node(state: AgentState) -> dict:
     response = invoke_with_retry(llm, messages, context="executor")
     search_query = response.content.strip() if response else current_subtask[:100]
 
-    # Step 2: run the search (web_search always returns a str).
-    search_results = web_search.invoke(search_query)
+    # Step 2: query all enabled sources in parallel (always yields a str output).
+    enabled = state.get("enabled_sources") or None  # None => all available sources
+    try:
+        results = aggregate_search(search_query, enabled=enabled, max_results=3)
+        search_output = format_results(results)
+        sources_used = sorted({r.source_type for r in results})
+    except Exception as exc:  # noqa: BLE001
+        search_output = f"Search failed: {exc}"
+        sources_used = []
 
     finding = {
         "id": _result_id_for_index(state, current_index),
         "task_index": current_index,
         "task": current_subtask,
         "query": search_query,
-        "output": search_results,
+        "output": search_output,
+        "sources": sources_used,
         "critic": None,
         "score": 0,
     }
-    logger.info("Executed subtask %d/%d: %s", current_index + 1, len(subtasks), current_subtask)
+    logger.info(
+        "Executed subtask %d/%d via %s: %s",
+        current_index + 1,
+        len(subtasks),
+        sources_used or "no sources",
+        current_subtask,
+    )
 
     return {"results": [finding], "current_task_index": current_index + 1}

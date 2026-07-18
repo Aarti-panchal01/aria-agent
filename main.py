@@ -27,7 +27,9 @@ def sanitize_goal(goal: str) -> str:
     return "".join(c for c in goal if ord(c) >= 32 or c in "\n\t")
 
 
-def initial_state(goal: str, session_id: str = "") -> AgentState:
+def initial_state(
+    goal: str, session_id: str = "", enabled_sources: list[str] | None = None
+) -> AgentState:
     """Build the initial agent state for a research goal."""
     return {
         "goal": goal,
@@ -41,21 +43,26 @@ def initial_state(goal: str, session_id: str = "") -> AgentState:
         "is_done": False,
         "replan_instruction": "",
         "session_id": session_id,
+        "enabled_sources": enabled_sources or [],
     }
 
 
-def run_research(goal: str, session_id: str = "") -> dict:
+def run_research(
+    goal: str, session_id: str = "", enabled_sources: list[str] | None = None
+) -> dict:
     """
     Run the full research workflow for a goal and return the final state.
 
     Args:
         goal (str): A sanitized research goal.
         session_id (str): Optional persistent-session id to tag the run with.
+        enabled_sources (list[str] | None): Restrict research to these source
+            names; None/empty uses all available sources.
 
     Returns:
         dict: The final agent state (includes ``final_report``).
     """
-    return aria_graph.invoke(initial_state(goal, session_id))
+    return aria_graph.invoke(initial_state(goal, session_id, enabled_sources))
 
 
 def main() -> None:

@@ -29,3 +29,8 @@ streamlit>=1.30.0
 
 # PDF export of research reports
 reportlab>=4.0.0
+
+# Multi-source research (arXiv, Wikipedia, GitHub; web via Tavily above)
+arxiv>=2.0.0
+wikipedia>=1.4.0
+PyGithub>=2.0.0

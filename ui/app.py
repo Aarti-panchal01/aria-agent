@@ -28,6 +28,7 @@ from sessions.manager import (  # noqa: E402
     save_session,
 )
 from state import merge_results  # noqa: E402
+from tools.sources.aggregator import available_source_names  # noqa: E402
 
 
 def _bridge_secrets_to_env() -> None:
@@ -77,11 +78,13 @@ def _cards_for(node: str, payload: dict, acc: dict) -> list[str]:
         task = (last.get("task") or "")[:80]
         cards.append(f'⚡ **Executing task {idx}/{total}:** "{task}" · `{ts}`')
         out = last.get("output", "")
-        n = out.count("Title:") if isinstance(out, str) else 0
+        srcs = last.get("sources") or []
         if isinstance(out, str) and out.startswith("Search failed"):
             cards.append(f"🔍 Search failed (handled gracefully) · `{ts}`")
         else:
-            cards.append(f"🔍 Search returned {n} result(s) · `{ts}`")
+            n = out.count("URL:") if isinstance(out, str) else 0
+            src_txt = ", ".join(srcs) if srcs else "no sources"
+            cards.append(f"🔍 {n} result(s) from [{src_txt}] · `{ts}`")
     elif node == "critic":
         results = payload.get("results", [])
         c = (results[-1].get("critic") or {}) if results else {}
@@ -157,8 +160,9 @@ def run(goal: str, session_id: str | None = None) -> None:
     steps: list[str] = []
     acc: dict = {}
 
+    enabled_sources = st.session_state.get("enabled_sources") or None
     try:
-        for update in aria_graph.stream(initial_state(clean_goal, sid)):
+        for update in aria_graph.stream(initial_state(clean_goal, sid, enabled_sources)):
             for node, payload in update.items():
                 if isinstance(payload, dict):
                     _merge(acc, payload)
@@ -221,6 +225,28 @@ with st.sidebar:
     )
     start = st.button("Run ARIA", type="primary", use_container_width=True)
     st.caption("Requires GROQ_API_KEY and TAVILY_API_KEY (env, .env, or Streamlit secrets).")
+
+    st.divider()
+    st.subheader("🔎 Research Sources")
+    _available = set(available_source_names())
+    _labels = {
+        "web": "Web (Tavily)",
+        "arxiv": "arXiv",
+        "wikipedia": "Wikipedia",
+        "github": "GitHub",
+    }
+    selected_sources: list[str] = []
+    for name, label in _labels.items():
+        avail = name in _available
+        checked = st.checkbox(
+            label if avail else f"{label} — key missing",
+            value=avail,
+            disabled=not avail,
+            key=f"src-{name}",
+        )
+        if checked and avail:
+            selected_sources.append(name)
+    st.session_state["enabled_sources"] = selected_sources
 
     st.divider()
     st.subheader("📚 Previous Research Sessions")

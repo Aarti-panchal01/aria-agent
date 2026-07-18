@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aria-agent"
+version = "0.2.0"
+description = "Autonomous Research Intelligence Agent — a self-critiquing LangGraph research agent with targeted replanning and persistent memory."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Aarti Panchal" }]
+keywords = ["langgraph", "agent", "llm", "research", "chromadb", "groq"]
+
+dependencies = [
+    "langgraph>=1.2.0",
+    "langgraph-checkpoint>=4.1.0",
+    "langchain>=1.3.1",
+    "langchain-core>=1.4.0",
+    "langchain-community>=0.4.1",
+    "langchain-groq>=1.1.2",
+    "chromadb>=1.5.9",
+    "python-dotenv>=1.0.0",
+    "pydantic>=2.0.0",
+]
+
+[project.optional-dependencies]
+ui = ["streamlit>=1.30.0"]
+dev = ["pytest>=8.0.0", "ruff>=0.6.0"]
+
+[project.urls]
+Homepage = "https://github.com/Aarti-panchal01/aria-agent"
+
+[project.scripts]
+aria = "main:main"
+
+[tool.setuptools]
+py-modules = ["main", "graph", "state", "config", "schemas"]
+
+[tool.setuptools.packages.find]
+include = ["nodes*", "tools*", "memory*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

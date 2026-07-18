@@ -147,6 +147,26 @@ def _now() -> str:
     return datetime.now().strftime("%H:%M:%S")
 
 
+def _fmt_elapsed(delta) -> str:
+    secs = int(delta.total_seconds())
+    return f"{secs // 60}m {secs % 60}s"
+
+
+_KIND = {
+    "memory_reader": "plan",
+    "planner": "plan",
+    "executor": "execute",
+    "critic": "critic",
+    "replanner": "replan",
+    "memory_writer": "plan",
+    "report_generator": "complete",
+}
+
+
+def _kind_for(node: str) -> str:
+    return _KIND.get(node, "plan")
+
+
 def _ti_for(node: str, payload: dict, acc: dict) -> int:
     """Task index a streamed step belongs to (-1 for setup/final steps)."""
     if node in ("memory_reader", "planner", "report_generator"):
@@ -218,25 +238,33 @@ def _merge(acc: dict, payload: dict) -> None:
             acc[k] = v
 
 
-def _render_feed(slot, steps: list[dict]) -> None:
-    """Render the last 5 steps, newest first, with muted timestamps."""
-    rows = "".join(
-        f"<div class='step'>{s['label']} <span class='ts'>{s['ts']}</span></div>"
-        for s in reversed(steps[-5:])
+def _card_html(s: dict) -> str:
+    return (
+        f"<div class='step-card {s.get('kind', 'plan')}'>"
+        f"<span>{s['label']}</span><span class='ts'>{s['ts']}</span></div>"
     )
-    slot.markdown(f"<div class='feed'>{rows}</div>", unsafe_allow_html=True)
 
 
-def _render_progress(slot, done: int, total: int) -> None:
-    """Thick custom progress bar with percentage text inside; green when done."""
+def _render_feed(slot, steps: list[dict]) -> None:
+    """Render the last 5 steps as styled cards, newest first."""
+    slot.markdown("".join(_card_html(s) for s in reversed(steps[-5:])), unsafe_allow_html=True)
+
+
+def _render_progress(slot, done: int, total: int, elapsed: str = "", complete: bool = False) -> None:
+    """Thick progress bar; indigo while running, green + elapsed when complete."""
     pct = int(done / total * 100) if total else 0
-    complete = total > 0 and done >= total
-    color = "#22c55e" if complete else "#6366f1"
-    label = f"{done} of {total} tasks complete" if total else "Starting…"
+    color = "#10b981" if complete else "#6366f1"
+    if complete:
+        label = f"Complete · {total} tasks · {elapsed}"
+        pct = 100
+    elif total:
+        label = f"Researching… {done} of {total} tasks"
+    else:
+        label = "Starting…"
     slot.markdown(
-        f"<div style='background:#1f1f23;border-radius:8px;height:20px;width:100%;"
+        f"<div style='background:#eef0f4;border-radius:6px;height:20px;width:100%;"
         f"overflow:hidden;margin:4px 0;'>"
-        f"<div style='width:{max(pct, 12)}%;background:{color};height:100%;display:flex;"
+        f"<div style='width:{max(pct, 14)}%;background:{color};height:100%;display:flex;"
         f"align-items:center;justify-content:center;color:#fff;font-size:12px;"
         f"font-weight:600;white-space:nowrap;transition:width .3s;'>{label}</div></div>",
         unsafe_allow_html=True,
@@ -250,19 +278,14 @@ def _render_show_all(steps: list[dict], results: list[dict]) -> None:
         by_ti.setdefault(s["ti"], []).append(s)
     score_by_ti = {r.get("task_index"): (r.get("critic") or {}).get("overall") for r in results}
 
-    with st.expander("Show all steps", expanded=False):
+    with st.expander(f"Show all {len(steps)} steps", expanded=False):
         for ti in sorted(by_ti):
             if ti < 0:
                 st.markdown("**· Setup / final**")
             else:
                 sc = score_by_ti.get(ti)
                 st.markdown(f"**· Task {ti + 1}**" + (f" — critic {sc}/10" if sc is not None else ""))
-            for s in by_ti[ti]:
-                st.markdown(
-                    f"<div class='step' style='margin-left:14px'>{s['label']} "
-                    f"<span class='ts'>{s['ts']}</span></div>",
-                    unsafe_allow_html=True,
-                )
+            st.markdown("".join(_card_html(s) for s in by_ti[ti]), unsafe_allow_html=True)
 
 
 def _pdf_download_button(report: str, session_id: str, goal: str, key: str) -> None:
@@ -281,16 +304,33 @@ def _pdf_download_button(report: str, session_id: str, goal: str, key: str) -> N
         st.caption(f"PDF export unavailable: {exc}")
 
 
-def _render_report(report: str, session_id: str, goal: str, key: str) -> None:
-    """Render the full-width report with word count and PDF export."""
-    st.divider()
-    st.subheader("📊 Research report")
+def _render_report(
+    report: str, session_id: str, goal: str, key: str, memory_stats: dict | None = None
+) -> None:
+    """Render the report inside a clean card: title + word-count badge, body, footer."""
+    st.write("")
     if not report:
         st.info("No report was produced.")
         return
-    st.markdown(report)
-    st.caption(f"Report: ~{len(report.split())} words")
-    _pdf_download_button(report, session_id, goal, key=key)
+    wc = len(report.split())
+    with st.container(border=True):
+        st.markdown(
+            f"<h2>{goal}<span class='wordcount'>~{wc} words</span></h2>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(report)
+        st.divider()
+        left, right = st.columns([2, 1])
+        with left:
+            ms = memory_stats or {}
+            st.caption(
+                f"Retrieved {ms.get('retrieved', 0)} memories from "
+                f"{ms.get('total', 0)} previous runs"
+            )
+        with right:
+            _pdf_download_button(report, session_id, goal, key=key)
+        with st.expander("📋 Copy markdown"):
+            st.code(report, language="markdown")
 
 
 def run(goal: str, session_id: str | None = None) -> None:
@@ -305,7 +345,11 @@ def run(goal: str, session_id: str | None = None) -> None:
     st.session_state["active_session"] = sid
     st.caption(f"Session `{sid[:8]}` · {clean_goal} · started {_now()}")
 
-    st.subheader("🧠 Cognitive loop (live)")
+    header_slot = st.empty()
+    header_slot.markdown(
+        "### 🧠 Cognitive Loop &nbsp; <span class='badge live'>● Live</span>",
+        unsafe_allow_html=True,
+    )
     prog_slot = st.empty()
     feed_slot = st.empty()
     _render_progress(prog_slot, 0, 0)
@@ -313,6 +357,7 @@ def run(goal: str, session_id: str | None = None) -> None:
     steps: list[dict] = []
     acc: dict = {}
     enabled_sources = st.session_state.get("enabled_sources") or None
+    started = datetime.now()
 
     try:
         for update in aria_graph.stream(initial_state(clean_goal, sid, enabled_sources)):
@@ -322,7 +367,7 @@ def run(goal: str, session_id: str | None = None) -> None:
                 _merge(acc, payload)
                 ti = _ti_for(node, payload, acc)
                 for label in _cards_for(node, payload, acc):
-                    steps.append({"ti": ti, "label": label, "ts": _now()})
+                    steps.append({"ti": ti, "label": label, "ts": _now(), "kind": _kind_for(node)})
             _render_feed(feed_slot, steps)
             total = len(acc.get("subtasks", []))
             done = min(acc.get("current_task_index", 0), total) if total else 0
@@ -332,7 +377,12 @@ def run(goal: str, session_id: str | None = None) -> None:
         return
 
     total = len(acc.get("subtasks", []))
-    _render_progress(prog_slot, total, total)
+    elapsed = _fmt_elapsed(datetime.now() - started)
+    header_slot.markdown(
+        "### 🧠 Cognitive Loop &nbsp; <span class='badge'>✓ Complete</span>",
+        unsafe_allow_html=True,
+    )
+    _render_progress(prog_slot, total, total, elapsed=elapsed, complete=True)
 
     acc.setdefault("goal", clean_goal)
     acc["session_id"] = sid
@@ -340,7 +390,10 @@ def run(goal: str, session_id: str | None = None) -> None:
 
     results = sorted(acc.get("results", []), key=lambda r: r.get("task_index", 0))
     _render_show_all(steps, results)
-    _render_report(acc.get("final_report", ""), sid, clean_goal, key="dl-run")
+    _render_report(
+        acc.get("final_report", ""), sid, clean_goal, key="dl-run",
+        memory_stats=acc.get("memory_stats"),
+    )
 
 
 def show_saved_session(session_id: str) -> None:
@@ -356,7 +409,10 @@ def show_saved_session(session_id: str) -> None:
     if st.button("🔄 Continue this session"):
         run(saved.get("goal", ""), session_id)
         return
-    _render_report(saved.get("final_report", ""), session_id, saved.get("goal", ""), key="dl-saved")
+    _render_report(
+        saved.get("final_report", ""), session_id, saved.get("goal", ""), key="dl-saved",
+        memory_stats=saved.get("memory_stats"),
+    )
 
 
 # --- Sidebar controls ------------------------------------------------------
@@ -427,9 +483,36 @@ with st.sidebar:
     )
 
 
+def render_empty_state() -> None:
+    """Perplexity-style empty state with clickable suggestion chips."""
+    st.markdown(
+        "<div class='empty-state'>"
+        "<div class='big'>🔬</div>"
+        "<h2>Research anything.</h2>"
+        "<p>ARIA plans your research into subtasks, searches across web + arXiv + "
+        "Wikipedia + GitHub, critiques each finding, replans the weak ones, and "
+        "writes a structured report.</p>"
+        "<p style='color:#9ca3af'>Try one:</p>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+    suggestions = [
+        "How does RAG work?",
+        "Compare Redis vs Memcached",
+        "What is LangGraph?",
+        "Explain transformer attention",
+    ]
+    cols = st.columns(len(suggestions))
+    for col, text in zip(cols, suggestions, strict=False):
+        with col:
+            if st.button(text, key=f"sug-{text[:14]}"):
+                st.session_state["prefill_goal"] = text
+                st.rerun()
+
+
 if start:
     run(goal_input)
 elif st.session_state.get("active_session"):
     show_saved_session(st.session_state["active_session"])
 else:
-    st.info("Enter a research goal in the sidebar and click **🚀 Run ARIA**.")
+    render_empty_state()

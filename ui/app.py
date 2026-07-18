@@ -446,24 +446,32 @@ with st.sidebar:
         height=100,
     )
     start = st.button("🚀 Run ARIA", type="primary", use_container_width=True)
+
+    # Initialize source toggles ONCE so user (de)selections persist across reruns.
+    _available = set(available_source_names())
+    _labels = {"web": "Web", "arxiv": "arXiv", "wikipedia": "Wikipedia", "github": "GitHub"}
+    for _name in _labels:
+        _key = f"src-{_name}"
+        if _key not in st.session_state:
+            st.session_state[_key] = _name in _available
+
+    # Live line under the Run button — updates immediately as sources are toggled.
+    _active = [_labels[n] for n in _labels if st.session_state.get(f"src-{n}") and n in _available]
     st.markdown(
-        "<div class='brand-sub'>Searches web, arXiv, Wikipedia, GitHub</div>",
+        "<div class='brand-sub'>Searching: "
+        + (" · ".join(_active) if _active else "no sources selected")
+        + "</div>",
         unsafe_allow_html=True,
     )
 
     st.divider()
     st.markdown("<div class='side-label'>Sources</div>", unsafe_allow_html=True)
-    _available = set(available_source_names())
-    _labels = {"web": "Web", "arxiv": "arXiv", "wikipedia": "Wikipedia", "github": "GitHub"}
-    selected_sources: list[str] = []
     for name, label in _labels.items():
         avail = name in _available
-        if st.checkbox(
-            label if avail else f"{label} (no key)",
-            value=avail, disabled=not avail, key=f"src-{name}",
-        ) and avail:
-            selected_sources.append(name)
-    st.session_state["enabled_sources"] = selected_sources
+        st.checkbox(label if avail else f"{label} (no key)", key=f"src-{name}", disabled=not avail)
+    st.session_state["enabled_sources"] = [
+        n for n in _labels if st.session_state.get(f"src-{n}") and n in _available
+    ]
 
     st.divider()
     st.markdown("<div class='side-label'>History</div>", unsafe_allow_html=True)

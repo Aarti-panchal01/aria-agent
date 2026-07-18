@@ -44,28 +44,97 @@ st.set_page_config(page_title="ARIA — Research Agent", page_icon="🔬", layou
 
 _CSS = """
 <style>
-.block-container { padding-top: 2.2rem; }
-/* cognitive feed */
-.feed { line-height: 1.35; margin-top: 2px; }
-.feed .step { padding: 4px 0; border-bottom: 1px solid #26262b; font-size: 0.92rem; }
-.feed .ts { color: #8b8b93; font-size: 0.72rem; margin-left: 8px; }
-/* report styling (report is the main markdown block on the page) */
-[data-testid="stMarkdownContainer"] h2 {
-    color: #f59e0b; border-bottom: 2px solid #6366f1; padding-bottom: 4px; margin-top: 1.3rem;
+/* Global — Perplexity/Notion light aesthetic */
+.stApp { background-color: #ffffff; }
+.main .block-container { max-width: 900px; padding: 2rem 2rem; }
+
+/* Sidebar */
+section[data-testid="stSidebar"] {
+    background-color: #f8f9fa;
+    border-right: 1px solid #e5e7eb;
 }
-[data-testid="stMarkdownContainer"] h3 { color: #6366f1; }
+section[data-testid="stSidebar"] .stMarkdown { font-size: 13px; }
+
+/* Typography */
+h1 { font-size: 1.8rem !important; font-weight: 700 !important; color: #111827 !important; }
+h2 { font-size: 1.2rem !important; font-weight: 600 !important; color: #374151 !important; }
+h3 { font-size: 1rem !important; font-weight: 600 !important; color: #6366f1 !important; }
+
+/* Buttons — gradient purple, full width */
+.stButton > button {
+    background: linear-gradient(135deg, #6366f1, #8b5cf6) !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+    font-size: 14px !important;
+    padding: 0.5rem 1rem !important;
+    width: 100% !important;
+    transition: opacity 0.2s !important;
+}
+.stButton > button:hover { opacity: 0.9 !important; }
+.stDownloadButton > button {
+    background: #ffffff !important; color: #6366f1 !important;
+    border: 1px solid #6366f1 !important; border-radius: 8px !important;
+    font-weight: 600 !important; font-size: 13px !important;
+}
+
+/* Cognitive loop step cards */
+.step-card {
+    background: #f8f9fa; border: 1px solid #e5e7eb; border-radius: 8px;
+    padding: 8px 12px; margin: 4px 0; font-size: 13px; color: #111827;
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+}
+.step-card.plan { border-left: 3px solid #9ca3af; }
+.step-card.execute { border-left: 3px solid #10b981; }
+.step-card.critic { border-left: 3px solid #6366f1; }
+.step-card.replan { border-left: 3px solid #f59e0b; }
+.step-card.complete { border-left: 3px solid #10b981; background: #f0fdf4; }
+.step-card .ts { color: #9ca3af; font-size: 11px; white-space: nowrap; }
+
+/* Report card */
+.report-container {
+    background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px;
+    padding: 1.5rem; margin-top: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+[data-testid="stMarkdownContainer"] h2 {
+    border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; margin-top: 1.3rem;
+}
 [data-testid="stMarkdownContainer"] table { border-collapse: collapse; width: 100%; margin: 8px 0; }
 [data-testid="stMarkdownContainer"] th, [data-testid="stMarkdownContainer"] td {
-    border: 1px solid #3f3f46; padding: 6px 10px;
+    border: 1px solid #e5e7eb; padding: 6px 10px;
 }
 [data-testid="stMarkdownContainer"] thead th { background: #6366f1; color: #fff; }
-[data-testid="stMarkdownContainer"] tbody tr:nth-child(even) { background: rgba(99,102,241,0.09); }
+[data-testid="stMarkdownContainer"] tbody tr:nth-child(even) { background: #f8f9fa; }
 [data-testid="stMarkdownContainer"] li { margin-bottom: 4px; }
-/* sidebar: compact session buttons, prominent primary Run button */
-section[data-testid="stSidebar"] .stButton button { font-size: 12px; }
-section[data-testid="stSidebar"] .stButton button[kind="primary"] {
-    font-size: 15px; font-weight: 700; padding: 0.55rem;
+
+/* Badges & suggestion chips */
+.badge { display:inline-block; background:#eef0ff; color:#6366f1; border-radius:999px;
+    padding:2px 10px; font-size:12px; font-weight:600; }
+.badge.live { background:#f0fdf4; color:#10b981; }
+.wordcount { float:right; background:#f8f9fa; border:1px solid #e5e7eb; border-radius:999px;
+    padding:2px 10px; font-size:12px; color:#6b7280; }
+
+/* Progress bar */
+.stProgress > div > div > div {
+    background: linear-gradient(90deg, #6366f1, #8b5cf6) !important; border-radius: 4px !important;
 }
+
+/* Empty state */
+.empty-state { text-align:center; color:#374151; margin-top:3rem; }
+.empty-state .big { font-size:3rem; }
+.empty-state h2 { border:none !important; }
+.empty-state p { color:#6b7280; max-width:620px; margin:0.5rem auto; font-size:15px; }
+
+/* Sidebar branding + history + footer */
+.brand { font-size:1.4rem; font-weight:700; color:#111827; }
+.brand-sub { font-size:12px; color:#6b7280; margin-top:-4px; }
+.brand-ver { font-size:11px; color:#9ca3af; }
+.side-label { font-size:12px; color:#9ca3af; font-weight:600; text-transform:uppercase;
+    letter-spacing:0.04em; margin:2px 0; }
+.session-line { font-size:12px; color:#374151; }
+.footer-side { color:#9ca3af; font-size:11px; margin-top:1rem; }
+.footer-side a { color:#6366f1; text-decoration:none; }
 </style>
 """
 st.markdown(_CSS, unsafe_allow_html=True)

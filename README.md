@@ -1,203 +1,164 @@
-# ARIA — Autonomous Research Intelligence Agent
+# 🔬 ARIA — Autonomous Research Intelligence Agent
 
-> An LLM agent that **plans, executes, critiques, and replans its own research** —
-> then writes a sourced report.
+> Plans → executes → critiques → replans → reports.
+> Watch the cognitive loop run live at [agent-aria.streamlit.app](https://agent-aria.streamlit.app)
 
 ![CI](https://github.com/Aarti-panchal01/aria-agent/actions/workflows/ci.yml/badge.svg)
-&nbsp;·&nbsp; Python 3.10+ &nbsp;·&nbsp; LangGraph · ChromaDB · Tavily · Groq &nbsp;·&nbsp; MIT
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+![Tests](https://img.shields.io/badge/tests-32%20passing-brightgreen)
+![License](https://img.shields.io/badge/license-MIT-green)
 
-## Demo
+---
+
+## What is ARIA?
+
+ARIA is an autonomous research agent built on **LangGraph**. You give it a
+research question. It breaks the question into subtasks, searches across multiple
+sources, scores each finding across 4 dimensions, replans the weak ones, and
+produces a structured multi-section report.
+
+**This is not a chatbot.** It is a cognitive loop you can watch run in real time.
+
+---
+
+## Live Demo
 
 ![ARIA live research run](assets/demo.gif)
 
-*A real run (Streamlit UI): ARIA plans 6 subtasks, searches multiple sources,
-self-scores each finding, and streams the cognitive loop live — then renders a
-multi-section, sourced report with one-click PDF export.*
+🔗 **Try it live:** [agent-aria.streamlit.app](https://agent-aria.streamlit.app)
 
 ---
 
-## What makes ARIA different
+## Architecture
 
-Most "agents" plan once and execute in a straight line. ARIA closes the loop:
+![ARIA architecture](aria_agent_architecture.svg)
 
-- It **scores every finding across four dimensions** — relevance, specificity,
-  source quality, and completeness — using structured output, not a regex.
-- It **replans surgically**: when a subtask's finding is weak, ARIA rewrites and
-  re-runs *only that subtask* with a targeted instruction, instead of throwing
-  away the whole plan.
-- It **remembers**: findings are embedded in ChromaDB (deduplicated by content
-  hash) and retrieved on future runs to avoid redundant work.
-
-The result is a research loop whose quality is *self-corrected*, with a complete
-JSON reasoning trace for every decision.
-
-> **No staged demos.** Earlier versions injected hardcoded facts for a single
-> topic. That is gone — every finding now comes from live web search, and ARIA
-> is tested to generalize (see `examples/`).
-
----
-
-## How it works
+### The Cognitive Loop
 
 ```
-memory_reader → planner → executor → critic → memory_writer → terminator ─┬─▶ report_generator → END
-                             ▲                                            │
-                             └──────────── replanner ◀────────────────────┘
-                                    (only when the critic flags a weak finding)
+Memory Reader → Planner → Executor → Critic → [Replan?] → Memory Writer → Terminator → Report
+                             ▲___________ replans only the failing subtask __________|
 ```
 
-1. **Memory Reader** — pulls relevant past findings from ChromaDB.
-2. **Planner** — breaks the goal into distinct subtasks.
-3. **Executor** — generates a focused query and runs a live Tavily search.
-4. **Critic** — scores the finding (structured `CriticScore`) and decides if a
-   replan is needed.
-5. **Replanner** — rewrites just the failing subtask and re-executes it.
-6. **Memory Writer** — persists the finding (content-hash dedup).
-7. **Report Generator** — synthesizes a markdown report + reasoning trace.
+### How the Critic Works
 
-State flows through a typed `AgentState` whose `results` channel uses a custom
-`merge_results` reducer (keyed by a stable finding `id`) so scores update
-findings in place — no duplicates.
+Each finding is scored across 4 dimensions using **structured output (Pydantic)**,
+not regex:
+
+| Dimension | What it measures |
+| --- | --- |
+| Relevance | How relevant the finding is to the research goal (0-10) |
+| Specificity | How specific vs vague (0-10) |
+| Source Quality | Credibility of the sources found (0-10) |
+| Completeness | How completely the subtask is answered (0-10) |
+
+If **overall < 7**: a targeted replan of *that subtask only* (capped at
+`max_replans = 2`). If **overall ≥ 7**: move to the next task.
+
+### Research Sources
+
+Queried in parallel, deduplicated by URL, ranked by relevance, and attributed
+(`[Web]`, `[arXiv]`, `[Wikipedia]`, `[GitHub]`) in every finding.
+
+| Source | What it searches | API key |
+| --- | --- | --- |
+| Web (Tavily) | Live web search | Required (`TAVILY_API_KEY`) |
+| arXiv | Academic papers | None |
+| Wikipedia | Encyclopedia | None |
+| GitHub | Open-source repos | Optional (`GITHUB_TOKEN`, raises rate limit) |
+
+### State Machine
+
+The graph shares a typed `AgentState`. A custom `merge_results` reducer keys
+findings by a stable id, so scores update in place instead of duplicating:
+
+```python
+class AgentState(TypedDict):
+    goal: str
+    subtasks: list[str]
+    current_task_index: int
+    results: Annotated[list[dict], merge_results]  # custom reducer — no duplicates
+    memory_context: str
+    memory_stats: dict
+    final_report: str
+    replan_count: int
+    max_replans: int          # caps replan loops (default 2)
+    session_id: str
+    enabled_sources: list[str]
+```
 
 ---
 
-## Results
+## Real Results
 
-Run ARIA on three deliberately unrelated topics to demonstrate generalization:
+Run ARIA on unrelated topics to demonstrate it generalizes (no hardcoded
+knowledge — every finding is live search):
 
 ```bash
 python scripts/run_examples.py   # requires your GROQ + TAVILY keys
 ```
 
-This populates `examples/` with a report + reasoning trace per topic and an
-`examples/RESULTS.md` table:
+Two committed sample runs live in [`examples/`](examples/). Populate the table
+below from `examples/RESULTS.md`:
 
-| Topic | Subtasks | Avg critic score | Replan cycles | Memories used |
+| Topic | Subtasks | Avg critic score | Replan cycles | Sources used |
 | --- | --- | --- | --- | --- |
 | Compare Redis vs Memcached | _run to fill_ | _run to fill_ | _run to fill_ | _run to fill_ |
 | What is retrieval augmented generation | _run to fill_ | _run to fill_ | _run to fill_ | _run to fill_ |
 | How does transformer attention work | _run to fill_ | _run to fill_ | _run to fill_ | _run to fill_ |
 
-> These cells are intentionally left for you to fill from a real run — the
-> numbers should be *measured*, not asserted. `scripts/run_examples.py` writes
-> them for you.
-
 ---
 
 ## Setup
 
+### Prerequisites
+- Python 3.10+
+- `GROQ_API_KEY` — free at [console.groq.com](https://console.groq.com)
+- `TAVILY_API_KEY` — free at [app.tavily.com](https://app.tavily.com)
+
+### Run locally
 ```bash
 git clone https://github.com/Aarti-panchal01/aria-agent
 cd aria-agent
-
-python -m venv venv
-venv\Scripts\activate            # Windows
-# source venv/bin/activate       # macOS / Linux
-
-pip install -e ".[dev,ui]"       # installs ARIA + tests + Streamlit UI
-```
-
-Configure API keys (both have free tiers):
-
-```bash
-cp .env.example .env
-# GROQ_API_KEY   → https://console.groq.com
-# TAVILY_API_KEY → https://app.tavily.com
-```
-
----
-
-## Run
-
-**CLI:**
-
-```bash
-aria                 # console script (installed via pyproject)
-# or: python main.py
-```
-
-**Web UI — watch the cognitive loop live:**
-
-```bash
+pip install -e ".[dev,ui]"
+cp .env.example .env          # add your keys
 streamlit run ui/app.py
 ```
 
-The UI streams each node as it fires ("Planned 6 subtasks" → "Critic scored
-8/10 (relevance 9…)" → "Replanning weak subtask…") and renders the final report
-with a copy button and a per-task reasoning trace in the sidebar.
+### Deploy to Streamlit Cloud
+1. Fork this repo.
+2. Go to [share.streamlit.io](https://share.streamlit.io).
+3. Select this repo, main file: **`ui/app.py`**.
+4. Add `GROQ_API_KEY` and `TAVILY_API_KEY` as secrets
+   (see [`.streamlit/secrets.toml.example`](.streamlit/secrets.toml.example)).
+5. Deploy.
 
 ---
 
-## Deploy to Streamlit Cloud
-
-ARIA ships with a ready-to-deploy Streamlit app.
-
-1. Push this repo to GitHub (already done if you're reading this on GitHub).
-2. Go to [share.streamlit.io](https://share.streamlit.io) and **connect your
-   GitHub account**.
-3. Create a new app pointing at this repo, branch `main`, **main file
-   `ui/app.py`**.
-4. Under **App → Settings → Secrets**, add your keys (see
-   [`.streamlit/secrets.toml.example`](.streamlit/secrets.toml.example)):
-   ```toml
-   GROQ_API_KEY = "..."
-   TAVILY_API_KEY = "..."
-   # GITHUB_TOKEN = "..."   # optional, raises the GitHub source's rate limit
-   ```
-5. Deploy. The theme in [`.streamlit/config.toml`](.streamlit/config.toml) is
-   applied automatically.
-
-Streamlit Cloud injects those secrets into the environment, and ARIA reads its
-keys from `os.environ`, so no code changes are needed.
-
----
-
-## Tech stack
-
-| Layer | Technology |
-| --- | --- |
-| LLM | Groq + Llama 3.1 8B Instant |
-| Agent framework | LangGraph (`StateGraph`, custom reducer, conditional edges) |
-| Structured output | Pydantic (`CriticScore`) |
-| Web search | Tavily API |
-| Memory | ChromaDB (local vector store, content-hash dedup) |
-| UI | Streamlit |
-
----
-
-## Project structure
-
-```
-aria-agent/
-├── main.py                 # CLI entry point + run_research() helper
-├── config.py               # env loading, logging, retry policy, constants
-├── schemas.py              # Pydantic CriticScore
-├── graph.py                # LangGraph wiring + targeted-replan routing
-├── state.py                # AgentState + merge_results reducer
-├── nodes/                  # planner, executor, critic, replanner, memory_*, terminator, report_generator
-├── memory/chroma_store.py  # persistent vector memory
-├── tools/search.py         # Tavily web search (always returns str)
-├── ui/app.py               # Streamlit live cognitive-loop UI
-├── scripts/run_examples.py # generate examples/ + RESULTS.md
-├── tests/                  # unit + full-graph integration tests
-└── pyproject.toml
-```
-
----
-
-## Development
+## Testing
 
 ```bash
-pytest -v            # unit + integration tests
-ruff check .         # lint
+pytest -v          # 32 tests (unit + full-graph integration)
+ruff check .       # lint
 ```
 
-CI runs both on every push (see `.github/workflows/ci.yml`). The integration
-tests exercise the **full compiled graph** and assert: no duplicate findings,
-one finding per subtask, no crash on search failure, and well-formed tables.
+CI runs both on every push to `main` (Python 3.10 + 3.12). The integration
+tests exercise the full compiled graph and assert: no duplicate findings, one
+finding per subtask, no crash on search failure, and well-formed tables.
 
-See [`LIMITATIONS.md`](LIMITATIONS.md) for an honest account of what ARIA does
-not do well, and [`CHANGELOG.md`](CHANGELOG.md) for the v0.1 → v0.2 upgrade.
+See [`LIMITATIONS.md`](LIMITATIONS.md), [`CHANGELOG.md`](CHANGELOG.md), and
+[`SECURITY.md`](SECURITY.md) for the honest details.
+
+---
+
+## Built by
+
+**Aarti Panchal** — 19-year-old AI/ML engineer at PES University, Bengaluru.
+C4GT 2026 Fellow · Product Engineer at Inverix · Founder of Closeli.
+
+[Portfolio](https://aarti-tech-portfolio.vercel.app) ·
+[LinkedIn](https://linkedin.com/in/aarti-panchal-93196a319) ·
+[GitHub](https://github.com/Aarti-panchal01)
 
 ---
 
@@ -211,11 +172,6 @@ not do well, and [`CHANGELOG.md`](CHANGELOG.md) for the v0.1 → v0.2 upgrade.
   url    = {https://github.com/Aarti-panchal01/aria-agent}
 }
 ```
-
-## Author
-
-**Aarti Panchal** — B.Tech AI/ML, PES University (2024–2028)
-[Portfolio](https://aarti-panchal.site/) · [LinkedIn](https://linkedin.com/in/aarti-panchal-93196a319)
 
 ## License
 

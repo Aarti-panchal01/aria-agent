@@ -53,6 +53,8 @@ class AgentState(TypedDict):
         session_id: Identifier of the persistent session this run belongs to.
         enabled_sources: Names of research sources to query (empty => all
             available: web, arXiv, Wikipedia, GitHub).
+        max_replans: Cap on targeted replans per run; after this many, accept the
+            best result for a weak subtask and move on (no infinite loops).
     """
 
     goal: str
@@ -67,3 +69,4 @@ class AgentState(TypedDict):
     replan_instruction: str
     session_id: str
     enabled_sources: list[str]
+    max_replans: int

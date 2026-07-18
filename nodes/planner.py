@@ -12,10 +12,18 @@ from langchain_groq import ChatGroq
 
 from config import GROQ_MODEL, get_logger, invoke_with_retry, require_groq_key
 from state import AgentState
+from tools.sources.aggregator import available_source_names
 
 logger = get_logger(__name__)
 
 NUM_SUBTASKS = 6
+
+_SOURCE_LABELS = {
+    "web": "general web search",
+    "arxiv": "arXiv academic papers",
+    "wikipedia": "Wikipedia articles",
+    "github": "GitHub repositories",
+}
 
 
 def _parse_subtasks(response_text: str) -> list[str]:
@@ -60,10 +68,18 @@ def planner_node(state: AgentState) -> dict:
     goal = state.get("goal", "")
     memory_context = state.get("memory_context", "")
 
+    # Constrain planning to sources ARIA can actually query.
+    enabled = state.get("enabled_sources") or available_source_names()
+    source_desc = ", ".join(_SOURCE_LABELS.get(s, s) for s in enabled) or "general web search"
+
     system_prompt = (
         f"You are a research planning AI. Break the given research goal into "
         f"{NUM_SUBTASKS} concrete subtasks that are each meaningfully different "
         f"and together give broad coverage of the topic.\n"
+        f"ARIA can ONLY gather information from these sources: {source_desc}.\n"
+        f"Plan tasks that are answerable using ONLY these sources. NEVER suggest "
+        f"academic databases (JSTOR, EBSCO, ProQuest, Scopus), paywalled tools, "
+        f"surveys, interviews, lab experiments, or any source not in that list.\n"
         f"Return ONLY a numbered list, nothing else."
     )
     if memory_context:

@@ -44,6 +44,7 @@ def initial_state(
         "replan_instruction": "",
         "session_id": session_id,
         "enabled_sources": enabled_sources or [],
+        "max_replans": 2,
     }
 
 

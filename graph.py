@@ -44,7 +44,8 @@ def _terminator_route(state: AgentState) -> str:
 
     last = _latest_result(state)
     needs_replan = bool(last and (last.get("critic") or {}).get("replan_needed"))
-    if needs_replan and state.get("replan_count", 0) < MAX_REPLANS:
+    cap = state.get("max_replans") or MAX_REPLANS
+    if needs_replan and state.get("replan_count", 0) < cap:
         return "replanner"
     return "executor"
 

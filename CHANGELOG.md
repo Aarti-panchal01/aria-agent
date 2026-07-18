@@ -3,6 +3,27 @@
 All notable changes to ARIA are documented here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] — 2026-07-18
+
+Deployable, multi-source research product. See [`UPGRADES.md`](UPGRADES.md).
+
+### Added
+- **Streamlit Cloud deploy config** — themed `.streamlit/config.toml`, secrets
+  template, and a step-by-step deploy guide. (`chore(deploy)`)
+- **Real-time streaming UI** — live cognitive-loop feed with timestamped step
+  cards and a progress bar via `aria_graph.stream()`. (`feat(ui)`)
+- **Persistent sessions** — SQLite-backed named sessions with resume, in
+  `sessions/manager.py`; `session_id` added to state. (`feat(sessions)`)
+- **PDF export** — one-click themed PDF of any report (`report/pdf_exporter.py`).
+  (`feat(export)`)
+- **Multi-source research** — web (Tavily), arXiv, Wikipedia, and GitHub queried
+  in parallel, deduplicated by URL, ranked by relevance, with source
+  attribution; selectable in the UI (`tools/sources/`). (`feat(sources)`)
+
+### Changed
+- Executor now aggregates multiple sources instead of Tavily-only.
+- Test suite 17 → 29 (sessions, PDF, per-source, aggregator, updated integration).
+
 ## [0.2.0] — 2026-07-18
 
 A correctness-and-credibility overhaul. The core loop is now provably correct,

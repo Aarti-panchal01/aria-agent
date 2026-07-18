@@ -1,234 +1,190 @@
 # ARIA — Autonomous Research Intelligence Agent
 
-> A LangGraph-powered research agent that plans, searches, critiques, 
-> remembers, and reports — autonomously.
+> An LLM agent that **plans, executes, critiques, and replans its own research** —
+> then writes a sourced report.
 
-> 🚧 **v1.0 — Work in Progress.** Core agent is functional. 
-> Streamlit UI and test suite coming next.
-
-
-> 🚧 **v1.0 — Work in Progress.** Core agent is functional.
-> Streamlit UI and test suite actively in development.
+![CI](https://github.com/Aarti-panchal01/aria-agent/actions/workflows/ci.yml/badge.svg)
+&nbsp;·&nbsp; Python 3.10+ &nbsp;·&nbsp; LangGraph · ChromaDB · Tavily · Groq &nbsp;·&nbsp; MIT
 
 ---
 
-## How It Works
+## What makes ARIA different
 
-ARIA operates as a **stateful cognitive loop**, where each node performs a specialized task:
+Most "agents" plan once and execute in a straight line. ARIA closes the loop:
 
-1. **Memory Reader** — Checks ChromaDB for past findings related to the research goal
-2. **Planner** — Breaks the research goal into 6 concrete, actionable subtasks
-3. **Executor** — Searches the web (Tavily API) for each subtask and prepends framework-specific knowledge
-4. **Critic** — Scores each result on a 0-10 scale for relevance and quality
-5. **Replanner** — If average score < 7, creates better subtasks and tries again
-6. **Memory Writer** — Saves all findings to ChromaDB for future sessions
-7. **Report Generator** — Synthesizes findings into a structured markdown report with comparison tables
+- It **scores every finding across four dimensions** — relevance, specificity,
+  source quality, and completeness — using structured output, not a regex.
+- It **replans surgically**: when a subtask's finding is weak, ARIA rewrites and
+  re-runs *only that subtask* with a targeted instruction, instead of throwing
+  away the whole plan.
+- It **remembers**: findings are embedded in ChromaDB (deduplicated by content
+  hash) and retrieved on future runs to avoid redundant work.
 
-The loop continues until the critic is satisfied (score ≥ 7 across results) or max iterations reached.
+The result is a research loop whose quality is *self-corrected*, with a complete
+JSON reasoning trace for every decision.
 
----
-
-## Architecture
-
-![Architecture](aria_agent_architecture.svg)
-
-**Built with LangGraph StateGraph:**
-- **7 nodes** (planner, executor, critic, replanner, memory_reader, memory_writer, report_generator)
-- **Conditional edges** based on critic scores and goal completion
-- **Persistent AgentState** shared across all nodes
-- **Stateful memory** via ChromaDB vector store
+> **No staged demos.** Earlier versions injected hardcoded facts for a single
+> topic. That is gone — every finding now comes from live web search, and ARIA
+> is tested to generalize (see `examples/`).
 
 ---
 
-## Features
+## How it works
 
-✨ **Stateful cognitive loop** with LangGraph — agents remember context across steps
+```
+memory_reader → planner → executor → critic → memory_writer → terminator ─┬─▶ report_generator → END
+                             ▲                                            │
+                             └──────────── replanner ◀────────────────────┘
+                                    (only when the critic flags a weak finding)
+```
 
-🧠 **Self-critic that scores and replans** — automatically improves search strategy if quality drops below 7/10
+1. **Memory Reader** — pulls relevant past findings from ChromaDB.
+2. **Planner** — breaks the goal into distinct subtasks.
+3. **Executor** — generates a focused query and runs a live Tavily search.
+4. **Critic** — scores the finding (structured `CriticScore`) and decides if a
+   replan is needed.
+5. **Replanner** — rewrites just the failing subtask and re-executes it.
+6. **Memory Writer** — persists the finding (content-hash dedup).
+7. **Report Generator** — synthesizes a markdown report + reasoning trace.
 
-💾 **Persistent memory across sessions** — ChromaDB stores findings for future reference
-
-🔍 **Web search integration** — Tavily API for real-time research data
-
-📊 **Structured markdown reports** — Comparison tables with aligned columns
-
-📋 **Full reasoning trace** — Complete decision log saved as JSON for transparency
-
-💰 **100% free** — Groq API + Llama 3.1 8B (no paid services required)
+State flows through a typed `AgentState` whose `results` channel uses a custom
+`merge_results` reducer (keyed by a stable finding `id`) so scores update
+findings in place — no duplicates.
 
 ---
 
-## Tech Stack
+## Results
 
-| Layer | Technology |
-| --- | --- |
-| **LLM** | Groq + Llama 3.1 8B Instant |
-| **Agent Framework** | LangGraph (StateGraph) |
-| **Web Search** | Tavily API |
-| **Memory Store** | ChromaDB (local vector database) |
-| **Backend** | Python 3.10+, LangChain |
+Run ARIA on three deliberately unrelated topics to demonstrate generalization:
+
+```bash
+python scripts/run_examples.py   # requires your GROQ + TAVILY keys
+```
+
+This populates `examples/` with a report + reasoning trace per topic and an
+`examples/RESULTS.md` table:
+
+| Topic | Subtasks | Avg critic score | Replan cycles | Memories used |
+| --- | --- | --- | --- | --- |
+| Compare Redis vs Memcached | _run to fill_ | _run to fill_ | _run to fill_ | _run to fill_ |
+| What is retrieval augmented generation | _run to fill_ | _run to fill_ | _run to fill_ | _run to fill_ |
+| How does transformer attention work | _run to fill_ | _run to fill_ | _run to fill_ | _run to fill_ |
+
+> These cells are intentionally left for you to fill from a real run — the
+> numbers should be *measured*, not asserted. `scripts/run_examples.py` writes
+> them for you.
 
 ---
 
 ## Setup
 
-### Quick Start
-
 ```bash
 git clone https://github.com/Aarti-panchal01/aria-agent
 cd aria-agent
 
-# Create virtual environment
 python -m venv venv
+venv\Scripts\activate            # Windows
+# source venv/bin/activate       # macOS / Linux
 
-# Activate venv (Windows)
-venv\Scripts\activate
-
-# On macOS/Linux:
-# source venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
+pip install -e ".[dev,ui]"       # installs ARIA + tests + Streamlit UI
 ```
 
-### Configure API Keys
-
-Create a `.env` file in the project root:
-
-```env
-GROQ_API_KEY=your_groq_api_key_here
-TAVILY_API_KEY=your_tavily_api_key_here
-```
-
-**Get free API keys:**
-- **Groq**: [console.groq.com](https://console.groq.com) — Free tier includes 10K requests/day
-- **Tavily**: [app.tavily.com](https://app.tavily.com) — Free tier includes search API access
-
-### Run ARIA
+Configure API keys (both have free tiers):
 
 ```bash
-python main.py
+cp .env.example .env
+# GROQ_API_KEY   → https://console.groq.com
+# TAVILY_API_KEY → https://app.tavily.com
 ```
-
-Enter your research goal when prompted. ARIA will:
-1. Break it into subtasks
-2. Search the web for each
-3. Score and refine results
-4. Save findings to memory
-5. Generate a markdown report in `output/report.md`
 
 ---
 
-## Project Structure
+## Run
+
+**CLI:**
+
+```bash
+aria                 # console script (installed via pyproject)
+# or: python main.py
+```
+
+**Web UI — watch the cognitive loop live:**
+
+```bash
+streamlit run ui/app.py
+```
+
+The UI streams each node as it fires ("Planned 6 subtasks" → "Critic scored
+8/10 (relevance 9…)" → "Replanning weak subtask…") and renders the final report
+with a copy button and a per-task reasoning trace in the sidebar.
+
+---
+
+## Tech stack
+
+| Layer | Technology |
+| --- | --- |
+| LLM | Groq + Llama 3.1 8B Instant |
+| Agent framework | LangGraph (`StateGraph`, custom reducer, conditional edges) |
+| Structured output | Pydantic (`CriticScore`) |
+| Web search | Tavily API |
+| Memory | ChromaDB (local vector store, content-hash dedup) |
+| UI | Streamlit |
+
+---
+
+## Project structure
 
 ```
 aria-agent/
-├── main.py                 # Entry point
-├── graph.py                # LangGraph state machine definition
-├── state.py                # AgentState schema
-├── nodes/
-│   ├── planner.py          # Goal → subtasks
-│   ├── executor.py         # Subtask → web search results
-│   ├── critic.py           # Score results (0-10)
-│   ├── memory_reader.py    # Retrieve past findings
-│   ├── memory_writer.py    # Save findings to ChromaDB
-│   ├── terminator.py       # Check if done
-│   └── report_generator.py # Results → markdown report
-├── memory/
-│   └── chroma_db/          # Local vector store
-├── tools/
-│   └── search.py           # Tavily web search wrapper
-├── output/                 # Gitignored — generated at runtime
-└── requirements.txt        # Python dependencies
+├── main.py                 # CLI entry point + run_research() helper
+├── config.py               # env loading, logging, retry policy, constants
+├── schemas.py              # Pydantic CriticScore
+├── graph.py                # LangGraph wiring + targeted-replan routing
+├── state.py                # AgentState + merge_results reducer
+├── nodes/                  # planner, executor, critic, replanner, memory_*, terminator, report_generator
+├── memory/chroma_store.py  # persistent vector memory
+├── tools/search.py         # Tavily web search (always returns str)
+├── ui/app.py               # Streamlit live cognitive-loop UI
+├── scripts/run_examples.py # generate examples/ + RESULTS.md
+├── tests/                  # unit + full-graph integration tests
+└── pyproject.toml
 ```
 
 ---
 
-## Example Output
+## Development
 
-After running `python main.py` with goal **"LangChain vs LangGraph"**, ARIA generates:
-
-**output/report.md:**
-```markdown
-Executive Summary
-
-This report compares LangGraph and LangChain agents, two open-source frameworks for building 
-LLM-powered applications. The key differences between the two frameworks are identified, 
-including their workflow types, architectures, and state management capabilities. LangGraph 
-is more suitable for stateful, multi-agent applications, while LangChain is better suited 
-for linear, sequential workflows.
-
-Comparison Table
-
-| Dimension           | LangGraph                                                          | LangChain                                              |
-| ------------------- | ------------------------------------------------------------------ | ------------------------------------------------------ |
-| Workflow Type       | Graph-based (supports loops, branches, cycles, conditional edges)  | Linear, sequential (retrieve, process, respond)       |
-| Architecture        | Nodes (functions) + Edges (control flow) + shared AgentState       | Modular components: chains, agents, tools, memory      |
-| State Management    | Persistent across steps, sessions, and agents                      | Basic, short-term memory within a single run           |
-| Best Use Cases      | Multi-agent systems, human-in-the-loop, long-running agents        | Chatbots, summarization, RAG pipelines, prototypes     |
-| Limitations         | Steeper learning curve, more upfront planning needed               | Hits ceiling with complex workflows, stateless         |
-
-Key Conclusions
-
-* LangGraph is more suitable for stateful, multi-agent applications, while LangChain is better suited for linear, 
-  sequential workflows.
-* LangGraph has persistent state management across steps, sessions, and agents, while LangChain has basic, short-term 
-  memory within a single run.
-* LangGraph has a steeper learning curve and requires more upfront planning, while LangChain is more straightforward 
-  to use.
-
-Key Takeaway
-
-LangGraph and LangChain agents are two distinct frameworks with different strengths and weaknesses, and the choice 
-between them depends on the specific requirements of the application being built.
+```bash
+pytest -v            # unit + integration tests
+ruff check .         # lint
 ```
 
-**output/reasoning_trace.json:**
-Complete decision tree with all search queries, scores, and replanning decisions.
+CI runs both on every push (see `.github/workflows/ci.yml`). The integration
+tests exercise the **full compiled graph** and assert: no duplicate findings,
+one finding per subtask, no crash on search failure, and well-formed tables.
+
+See [`LIMITATIONS.md`](LIMITATIONS.md) for an honest account of what ARIA does
+not do well, and [`CHANGELOG.md`](CHANGELOG.md) for the v0.1 → v0.2 upgrade.
 
 ---
 
-## Roadmap
+## Citation
 
-- [ ] Streamlit web UI for visual research interface
-- [ ] PDF export for research reports
-- [ ] Extended tool ecosystem: code execution, file reading, API calls
-- [ ] Multi-agent parallelism for faster research
-- [ ] Custom knowledge base ingestion
-- [ ] Interactive critiquing with human feedback loop
-
----
-
-## Security & Privacy
-
-⚠️ **Important security considerations:**
-
-- **Never commit `.env` files** — Your `.env` file contains real API keys and is protected by `.gitignore`. Always verify with `git status` before pushing to ensure it's not staged.
-
-- **Output folder contains research history** — The `output/` directory (containing `report.md` and `reasoning_trace.json`) is gitignored by default to prevent accidentally pushing your research history. This folder is local-only.
-
-- **Web search implies logging** — ARIA makes real web searches via Tavily API and Groq API. Your research goals and queries may be logged by these services. Treat sensitive research topics accordingly and review their privacy policies:
-  - [Tavily Privacy](https://tavily.com/privacy)
-  - [Groq Privacy](https://groq.com/privacy)
-
-- **Local memory store** — ChromaDB vector store is stored locally in `memory/chroma_db/` and is gitignored. Your embeddings remain on your machine.
-
----
+```bibtex
+@software{panchal2026aria,
+  author = {Panchal, Aarti},
+  title  = {ARIA: Autonomous Research Intelligence Agent},
+  year   = {2026},
+  url    = {https://github.com/Aarti-panchal01/aria-agent}
+}
+```
 
 ## Author
 
-**Built by Aarti Panchal**
-
-- **Education**: B.Tech AI/ML | PES University, Bangalore (2024–2028)
-- **Portfolio**: [aarti-panchal.site](https://aarti-panchal.site/)
-- **LinkedIn**: [linkedIn](https://linkedin.com/in/aarti-panchal-93196a319)
-
----
+**Aarti Panchal** — B.Tech AI/ML, PES University (2024–2028)
+[Portfolio](https://aarti-panchal.site/) · [LinkedIn](https://linkedin.com/in/aarti-panchal-93196a319)
 
 ## License
 
-MIT 
-
----
-
-**Questions or feedback?** Open an issue on GitHub or reach out directly.
+MIT — see [LICENSE](LICENSE).

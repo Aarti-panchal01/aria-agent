@@ -1,197 +1,86 @@
 """
 Executor node for the ARIA research agent.
 
-Executes the current subtask by asking Groq what to search for,
-then executes web_search manually. For research tasks, runs dual
-searches and combines results.
+For the current subtask, asks the LLM for a focused search query, runs a
+real Tavily web search, and records the finding. No hardcoded knowledge:
+every finding comes from live search.
 """
 
-import os
-import re
-import time
-from dotenv import load_dotenv, find_dotenv
-from langchain_groq import ChatGroq
-from langchain_core.messages import SystemMessage, HumanMessage
+import uuid
 
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_groq import ChatGroq
+
+from config import GROQ_MODEL, get_logger, invoke_with_retry, require_groq_key
 from state import AgentState
 from tools.search import web_search
 
+logger = get_logger(__name__)
 
-# Hardcoded knowledge base for common frameworks
-KNOWLEDGE_BASE = {
-    "langchain": {
-        "primary purpose": "Open-source framework for building LLM-powered applications using modular components like chains, agents, prompts, and memory",
-        "workflow type": "Linear, sequential — retrieve, process, respond",
-        "architecture": "Modular components: chains, agents, tools, memory, document loaders",
-        "state management": "Basic, short-term memory within a single run",
-        "best use cases": "Chatbots, document summarization, RAG pipelines, quick prototypes",
-        "limitations": "Hits a ceiling with complex workflows, no native graph-based execution, stateless across runs"
-    },
-    "langgraph": {
-        "primary purpose": "Low-level orchestration framework for building stateful, multi-agent applications as graphs",
-        "workflow type": "Graph-based — supports loops, branches, cycles, and conditional edges",
-        "architecture": "Nodes (functions) + Edges (control flow) + shared AgentState",
-        "state management": "Persistent across steps, sessions, and agents using TypedDict + reducers",
-        "best use cases": "Multi-agent systems, human-in-the-loop workflows, long-running agents, production AI",
-        "limitations": "Steeper learning curve, no built-in test runner, requires more upfront architecture planning"
-    }
-}
+_QUERY_SYSTEM_PROMPT = (
+    "You are a search query generator. Given a research subtask, output ONE "
+    "specific, focused web search query.\n"
+    "Rules:\n"
+    "- Include the specific entities and attribute being researched\n"
+    "- Maximum 8 words\n"
+    "- Output the query string ONLY, nothing else"
+)
 
 
-def _format_knowledge_base_entry(framework: str) -> str:
+def _result_id_for_index(state: AgentState, task_index: int) -> str:
     """
-    Format a knowledge base entry for display.
-    
-    Args:
-        framework (str): The framework name (lowercase).
-    
-    Returns:
-        str: Formatted knowledge base entry.
-    """
-    if framework not in KNOWLEDGE_BASE:
-        return ""
-    
-    entry = KNOWLEDGE_BASE[framework]
-    formatted = f"=== BASELINE KNOWLEDGE: {framework.upper()} ===\n\n"
-    
-    for key, value in entry.items():
-        formatted += f"{key.replace('_', ' ').title()}: {value}\n\n"
-    
-    return formatted
+    Return a stable id for the finding at ``task_index``.
 
-
-def _find_framework_in_task(task: str) -> str | None:
+    Re-uses the existing finding's id when this task is being re-executed
+    (e.g. after a targeted replan) so the merge reducer updates it in place
+    rather than appending a duplicate. Otherwise mints a fresh uuid4.
     """
-    Check if any known framework is mentioned in the task (case insensitive).
-    
-    Args:
-        task (str): The current task description.
-    
-    Returns:
-        str: Framework name (lowercase) if found, None otherwise.
-    """
-    task_lower = task.lower()
-    # Check LangChain BEFORE LangGraph to avoid substring issues
-    if "langchain" in task_lower:
-        return "langchain"
-    if "langgraph" in task_lower:
-        return "langgraph"
-    return None
+    for r in state.get("results", []):
+        if r.get("task_index") == task_index:
+            return r["id"]
+    return str(uuid.uuid4())
 
 
 def executor_node(state: AgentState) -> dict:
     """
-    Executor node: complete the current subtask using web search.
-    
-    Asks Groq what search query to use for the subtask, then executes
-    the web_search directly in Python and returns the results.
-    
+    Executor node: research the current subtask via live web search.
+
     Args:
         state (AgentState): Current agent state.
-    
+
     Returns:
-        dict: Updated state with new result appended to results and
-              current_task_index incremented.
+        dict: A single finding (merged by id) and the advanced task index.
     """
-    # Load environment variables from .env
-    load_dotenv(find_dotenv())
-    
-    # Initialize Groq LLM
-    GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-    if not GROQ_API_KEY:
-        raise ValueError(
-            "GROQ_API_KEY not found in environment. "
-            "Please set it in your .env file."
-        )
-    
-    llm = ChatGroq(
-        model="llama-3.1-8b-instant",
-        api_key=GROQ_API_KEY,
-        temperature=0.7
-    )
-    
-    # Get current subtask
+    llm = ChatGroq(model=GROQ_MODEL, api_key=require_groq_key(), temperature=0.7)
+
     subtasks = state.get("subtasks", [])
     current_index = state.get("current_task_index", 0)
-    
+
     if current_index >= len(subtasks):
-        # No more subtasks to execute
-        return {
-            "results": [],
-            "current_task_index": current_index
-        }
-    
+        return {"current_task_index": current_index}
+
     current_subtask = subtasks[current_index]
-    
-    # Step 1: Ask Groq what search query to use
-    system_prompt = (
-        "You are a search query generator. Given a research subtask, "
-        "output ONE specific search query. Rules:\n"
-        "- If the subtask says 'Research LangChain', your query MUST "
-        "start with 'LangChain'\n"
-        "- If the subtask says 'Research LangGraph', your query MUST "
-        "start with 'LangGraph'\n"
-        "- Include the specific attribute being researched\n"
-        "- Maximum 8 words\n"
-        "- Output the query string ONLY, nothing else"
-    )
-    
+
+    # Step 1: ask the LLM for a focused search query.
     messages = [
-        SystemMessage(content=system_prompt),
-        HumanMessage(content=current_subtask)
+        SystemMessage(content=_QUERY_SYSTEM_PROMPT),
+        HumanMessage(content=current_subtask),
     ]
-    
-    # Call LLM with retry logic: up to 3 attempts with 2-second wait between retries
-    max_retries = 3
-    retry_delay = 2
-    search_query = None
-    
-    for attempt in range(max_retries):
-        try:
-            query_response = llm.invoke(messages)
-            search_query = query_response.content.strip()
-            break  # Success, exit retry loop
-        except Exception as e:
-            if attempt < max_retries - 1:
-                # Not the last attempt, wait and retry
-                time.sleep(retry_delay)
-            else:
-                # All retries exhausted, log error and use fallback
-                print(f"LLM call failed after {max_retries} retries in executor: {str(e)}")
-                search_query = None
-    
-    # Use fallback search query if LLM call failed
-    if not search_query:
-        search_query = current_subtask[:100]  # Use first 100 chars of subtask as fallback
-    
-    # Step 2: Bias toward LangChain documentation if researching LangChain
-    if "research langchain" in current_subtask.lower():
-        search_query = f"LangChain {search_query} site:python.langchain.com OR site:docs.langchain.com"
-    
-    # Step 3: Check for knowledge base framework mentions
-    framework = _find_framework_in_task(current_subtask)
-    kb_entry = _format_knowledge_base_entry(framework) if framework else ""
-    
-    # Step 4: Execute single web search
-    result_output = ""
-    
-    try:
-        search_results = web_search.invoke(search_query)
-    except Exception as e:
-        search_results = f"Search execution failed: {str(e)}"
-    
-    # Prepend knowledge base entry if framework found, then add search results
-    result_output = kb_entry if kb_entry else ""
-    result_output += search_results
-    
-    # Append result to state
-    new_result = {
+    response = invoke_with_retry(llm, messages, context="executor")
+    search_query = response.content.strip() if response else current_subtask[:100]
+
+    # Step 2: run the search (web_search always returns a str).
+    search_results = web_search.invoke(search_query)
+
+    finding = {
+        "id": _result_id_for_index(state, current_index),
+        "task_index": current_index,
         "task": current_subtask,
-        "output": result_output,
-        "score": 0  # Critic will fill this in
+        "query": search_query,
+        "output": search_results,
+        "critic": None,
+        "score": 0,
     }
-    
-    return {
-        "results": [new_result],  # Will be added via operator.add
-        "current_task_index": current_index + 1
-    }
+    logger.info("Executed subtask %d/%d: %s", current_index + 1, len(subtasks), current_subtask)
+
+    return {"results": [finding], "current_task_index": current_index + 1}
